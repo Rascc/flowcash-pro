@@ -1244,7 +1244,11 @@
 
             if(activePickrInstance) {
                 activePickrInstance.destroyAndRemove();
+                activePickrInstance = null;
             }
+
+            const pickrWrapper = document.getElementById("picker-inline-wrapper");
+            pickrWrapper.innerHTML = '<div id="picker-inline-container" class="w-full"></div>';
 
             activePickrInstance = Pickr.create({
                 el: '#picker-inline-container',
@@ -1945,7 +1949,7 @@
                     <span class="text-[9px] text-slate-400 font-bold uppercase mb-2">Pratinjau Langsung</span>
                     <div id="picker-live-preview" class="w-full py-3 px-4 rounded-xl font-bold text-center text-sm shadow-xs transition-all duration-150">Nama Rekening</div>
                 </div>
-                <div class="w-full flex justify-center py-2"><div id="picker-inline-container" class="w-full"></div></div>
+                <div id="picker-inline-wrapper" class="w-full flex justify-center py-2"><div id="picker-inline-container" class="w-full"></div></div>
                 <div class="grid grid-cols-2 gap-3 pt-2">
                     <button type="button" onclick="window.tutupPopUpColorPicker()" class="bg-slate-100 text-slate-500 font-bold py-2.5 rounded-xl text-xs">Batal</button>
                     <button type="button" onclick="window.simpanWarnaDariPopUp()" class="text-white font-bold py-2.5 rounded-xl text-xs bg-primary-theme">Simpan Warna</button>
