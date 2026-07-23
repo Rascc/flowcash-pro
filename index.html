@@ -75,7 +75,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-        import { getFirestore, doc, setDoc, collection, addDoc, getDocs, deleteDoc, updateDoc, query, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, doc, setDoc, collection, addDoc, getDocs, deleteDoc, updateDoc, query, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyCa51o-rHp5-Om6uuQjbnZx9T449Zevqms",
@@ -88,7 +88,9 @@
 
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
-        const db = getFirestore(app);
+        const db = initializeFirestore(app, {
+            localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) })
+        });
         const provider = new GoogleAuthProvider();
 
         let currentUser = null;
@@ -100,6 +102,7 @@
         let chartBarInstance = null;
         let chartWeekdayInstance = null;
         let editingTxId = null;
+        let editingReminderId = null;
 
         let dialogConfirmCallback = null;
         let heatmapSelectedDate = null; 
@@ -784,6 +787,13 @@
             setTimeout(() => el.parentElement.classList.add("hidden"), 3000);
         }
 
+        window.addEventListener('offline', () => {
+            showToast("📴 Offline — transaksi tetap tersimpan, akan sinkron otomatis saat online kembali.");
+        });
+        window.addEventListener('online', () => {
+            showToast("✅ Online kembali — menyinkronkan data...");
+        });
+
         window.openPromptModal = function(title, placeholder, defaultValue, callback) {
             document.getElementById("prompt-title").innerText = title;
             const input = document.getElementById("prompt-input");
@@ -1422,20 +1432,36 @@
         }
 
         // --- SISTEM LOGIKA TAB REMINDER BARU ---
-        window.bukaModalReminderBaru = function() {
+        window.bukaModalReminderBaru = function(reminderId) {
             document.getElementById("rem-form").reset();
             document.getElementById("rem-modal").classList.remove("hidden");
             document.getElementById("rem-modal").classList.add("flex");
+
+            editingReminderId = reminderId || null;
+            const rem = editingReminderId ? reminders.find(r => r.id === editingReminderId) : null;
+
+            document.getElementById("rem-modal-title").innerText = rem ? "Ubah Agenda Pengingat" : "Buat Agenda Pengingat";
+            document.getElementById("rem-submit-btn").innerText = rem ? "Simpan Perubahan" : "Simpan Agenda";
+
+            if (rem) document.getElementById("rem-type").value = rem.type;
             
             // Set Default Kategori Pengingat
             const remType = document.getElementById("rem-type").value;
             const remKat = document.getElementById("rem-kat");
             remKat.innerHTML = Object.keys(customCategories[remType]).map(k => `<option value="${k}">${k}</option>`).join('');
+
+            if (rem) {
+                document.getElementById("rem-title").value = rem.title;
+                remKat.value = rem.category;
+                document.getElementById("rem-nominal").value = Number(rem.amount).toLocaleString('id-ID');
+                document.getElementById("rem-duedate").value = rem.dueDate;
+            }
         };
 
         window.tutupModalReminderBaru = function() {
             document.getElementById("rem-modal").classList.add("hidden");
             document.getElementById("rem-modal").classList.remove("flex");
+            editingReminderId = null;
         };
 
         window.updateReminderKategoriOptions = function() {
@@ -1455,12 +1481,19 @@
 
                 if(!title || !amount || !dueDate) return;
 
-                const newRem = { title, type, category, amount, dueDate, status: "Belum Dibayar" };
-                await addDoc(collection(db, `users/${currentUser.uid}/reminders`), newRem);
-                
+                if (editingReminderId) {
+                    const existing = reminders.find(r => r.id === editingReminderId);
+                    const updatedRem = { title, type, category, amount, dueDate, status: existing ? existing.status : "Belum Dibayar" };
+                    await setDoc(doc(db, `users/${currentUser.uid}/reminders/${editingReminderId}`), updatedRem);
+                    showToast("Pengingat berhasil diperbarui!");
+                } else {
+                    const newRem = { title, type, category, amount, dueDate, status: "Belum Dibayar" };
+                    await addDoc(collection(db, `users/${currentUser.uid}/reminders`), newRem);
+                    showToast("Pengingat baru berhasil dibuat!");
+                }
+
                 tutupModalReminderBaru();
                 await muatData();
-                showToast("Pengingat baru berhasil dibuat!");
             } catch(err) { showToast(err.message); }
         };
 
@@ -1490,6 +1523,7 @@
                         </div>
                         <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
                             ${!isPaid ? `<button onclick="window.bayarViaKas('${r.id}')" class="bg-indigo-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-xl">💸 Bayar via Kas</button>` : ''}
+                            <button onclick="window.bukaModalReminderBaru('${r.id}')" class="text-indigo-600 text-[10px] font-bold px-2 py-1.5 bg-indigo-50 rounded-xl">✏️ Edit</button>
                             <button onclick="window.konfirmasiHapusReminder('${r.id}')" class="text-rose-500 text-[10px] font-bold px-2 py-1.5 bg-rose-50 rounded-xl">Hapus</button>
                         </div>
                     </div>
@@ -1902,7 +1936,7 @@
         <div id="rem-modal" class="fixed inset-0 bg-slate-900/60 items-center justify-center p-6 z-50 hidden">
             <form id="rem-form" onsubmit="window.simpanReminder(event)" class="bg-white w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl custom-card-bg border">
                 <div class="flex justify-between items-center pb-1 border-b border-slate-100">
-                    <h3 class="font-black text-sm">Buat Agenda Pengingat</h3>
+                    <h3 class="font-black text-sm" id="rem-modal-title">Buat Agenda Pengingat</h3>
                     <button type="button" onclick="window.tutupModalReminderBaru()" class="text-slate-400">✕</button>
                 </div>
                 <div class="space-y-3 text-xs">
@@ -1934,7 +1968,7 @@
                 </div>
                 <div class="grid grid-cols-2 gap-3 pt-1">
                     <button type="button" onclick="window.tutupModalReminderBaru()" class="bg-slate-100 text-slate-500 font-bold py-2 rounded-xl text-xs">Batal</button>
-                    <button type="submit" class="text-white font-bold py-2 rounded-xl text-xs bg-primary-theme">Simpan Agenda</button>
+                    <button type="submit" id="rem-submit-btn" class="text-white font-bold py-2 rounded-xl text-xs bg-primary-theme">Simpan Agenda</button>
                 </div>
             </form>
         </div>
