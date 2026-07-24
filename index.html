@@ -30,6 +30,9 @@
             --card-bg-color: #ffffff;
             --primary-theme-color: #4f46e5;
             --header-bg-color: #0f172a;
+            --header-text-color: #ffffff;
+            --add-tx-btn-color: #4f46e5;
+            --add-tx-btn-text-color: #ffffff;
             --app-text-color: #1e293b;
             --input-bg-color: #f1f5f9;
             --border-color: #e2e8f0;
@@ -59,6 +62,10 @@
         .text-primary-theme { color: var(--primary-theme-color) !important; }
         .border-primary-theme { border-color: var(--primary-theme-color) !important; }
         .app-global-text { color: var(--app-text-color) !important; }
+        .header-text-dynamic { color: var(--header-text-color) !important; }
+        .header-text-dynamic-muted { color: var(--header-text-color) !important; opacity: 0.62; }
+        .bg-add-tx-btn { background-color: var(--add-tx-btn-color) !important; }
+        .text-add-tx-btn-dynamic { color: var(--add-tx-btn-text-color) !important; }
 
         /* ===== Mode Gelap: navy lembut + gradient ===== */
         html.dark-mode {
@@ -256,12 +263,38 @@
                 document.getElementById("filter-tx-bulan").value = "all"; 
 
                 await loadCategoriesFromDb();
+                await loadThemeSettingsFromDb();
                 await muatData();
             } else {
                 document.getElementById("login-screen").classList.remove("hidden");
                 document.getElementById("main-screen").classList.add("hidden");
             }
         });
+
+        let appThemeSettings = { headerBg: null, headerText: null, addTxBtn: null, addTxBtnText: null };
+        const themeVarMap = { headerBg: '--header-bg-color', headerText: '--header-text-color', addTxBtn: '--add-tx-btn-color', addTxBtnText: '--add-tx-btn-text-color' };
+
+        function applyAppThemeSettings() {
+            Object.keys(themeVarMap).forEach(k => {
+                if (appThemeSettings[k]) document.documentElement.style.setProperty(themeVarMap[k], appThemeSettings[k]);
+            });
+        }
+
+        async function loadThemeSettingsFromDb() {
+            try {
+                const themeSnap = await getDocs(collection(db, `users/${currentUser.uid}/app_settings`));
+                if(!themeSnap.empty) {
+                    themeSnap.forEach(d => { if(d.id === "theme") appThemeSettings = { ...appThemeSettings, ...d.data() }; });
+                }
+                applyAppThemeSettings();
+            } catch(e) { console.log("Menggunakan tema bawaan."); }
+        }
+
+        async function syncThemeSettingsToDb() {
+            await setDoc(doc(db, `users/${currentUser.uid}/app_settings/theme`), appThemeSettings);
+            applyAppThemeSettings();
+            renderThemeSettingSwatches();
+        }
 
         async function loadCategoriesFromDb() {
             try {
@@ -348,7 +381,7 @@
             if(tabName === 'transaksi') { txCurrentPage = 1; renderHistory(); }
             if(tabName === 'kategori-mgr') renderCategoryManager();
             if(tabName === 'reminder') renderReminders();
-            if(tabName === 'fitur') renderAccountManager();
+            if(tabName === 'fitur') { renderAccountManager(); renderThemeSettingSwatches(); }
         }
 
         const tabOrderForHistory = ['dashboard', 'transaksi', 'reminder', 'kategori-mgr', 'fitur'];
@@ -1347,6 +1380,29 @@
             if (saved && accounts.some(a => a.id === saved)) sel.value = saved;
         }
 
+        function renderThemeSettingSwatches() {
+            const container = document.getElementById("theme-setting-swatches");
+            if (!container) return;
+            const rows = [
+                { mode: 'headerBg', label: 'Warna Latar Header' },
+                { mode: 'headerText', label: 'Warna Teks Header' },
+                { mode: 'addTxBtn', label: 'Warna Tombol Tambah Transaksi' },
+                { mode: 'addTxBtnText', label: 'Warna Teks Tombol Tambah Transaksi' }
+            ];
+            container.innerHTML = rows.map(r => {
+                const val = getComputedStyle(document.documentElement).getPropertyValue(themeVarMap[r.mode]).trim();
+                return `
+                    <div class="flex items-center justify-between bg-slate-50 p-2.5 rounded-xl border border-slate-100 custom-card-bg">
+                        <div class="flex items-center gap-2.5">
+                            <span class="w-6 h-6 rounded-full border border-slate-200" style="background-color: ${val};"></span>
+                            <span class="text-xs font-bold">${r.label}</span>
+                        </div>
+                        <button onclick="window.bukaPopUpThemeColorPicker('${r.mode}')" class="text-[10px] font-extrabold px-2.5 py-1.5 bg-indigo-50 text-indigo-600 rounded-xl">Ubah</button>
+                    </div>
+                `;
+            }).join('');
+        }
+
         function renderAccountManager() {
             renderSettingDefaultAccountOptions();
             const container = document.getElementById("account-list-container");
@@ -1381,7 +1437,65 @@
             }).join('') || `<p class="text-xs text-slate-400">Belum ada akun kustom.</p>`;
         }
 
+        let currentThemePickerMode = null;
+
+        window.bukaPopUpThemeColorPicker = function(mode) {
+            currentThemePickerMode = mode;
+            currentPickerAccountId = null;
+
+            const titles = { headerBg: 'Warna Latar Header', headerText: 'Warna Teks Header', addTxBtn: 'Warna Tombol Tambah Transaksi', addTxBtnText: 'Warna Teks Tombol Tambah Transaksi' };
+            document.getElementById("picker-modal-title").innerText = titles[mode];
+
+            const getVal = (m) => getComputedStyle(document.documentElement).getPropertyValue(themeVarMap[m]).trim();
+            const currentColor = getVal(mode);
+
+            const previewBox = document.getElementById("picker-live-preview");
+            const isBtnMode = mode === 'addTxBtn' || mode === 'addTxBtnText';
+            previewBox.innerText = isBtnMode ? '+ Tambah Transaksi' : 'Total Kekayaan Bersih • Rp 0';
+
+            if (mode === 'headerText') {
+                previewBox.style.backgroundColor = getVal('headerBg');
+                previewBox.style.color = currentColor;
+            } else if (mode === 'headerBg') {
+                previewBox.style.backgroundColor = currentColor;
+                previewBox.style.color = getVal('headerText');
+            } else if (mode === 'addTxBtnText') {
+                previewBox.style.backgroundColor = getVal('addTxBtn');
+                previewBox.style.color = currentColor;
+            } else {
+                previewBox.style.backgroundColor = currentColor;
+                previewBox.style.color = getVal('addTxBtnText');
+            }
+
+            document.getElementById("color-picker-popup-modal").classList.remove("hidden");
+            document.getElementById("color-picker-popup-modal").classList.add("flex");
+
+            if(activePickrInstance) { activePickrInstance.destroyAndRemove(); activePickrInstance = null; }
+            const pickrWrapper = document.getElementById("picker-inline-wrapper");
+            pickrWrapper.innerHTML = '<div id="picker-inline-container" class="w-full"></div>';
+
+            activePickrInstance = Pickr.create({
+                el: '#picker-inline-container',
+                theme: 'nano',
+                inline: true,
+                showAlways: true,
+                default: currentColor,
+                swatches: ['#2563eb', '#10b981', '#8b5cf6', '#f59e0b', '#f43f5e', '#475569', '#ffffff', '#000000', '#0f172a'],
+                components: {
+                    preview: true, opacity: true, hue: true,
+                    interaction: { hex: true, rgba: false, hsla: false, hsv: false, cmyk: false, input: true, clear: false, save: false }
+                }
+            });
+
+            activePickrInstance.on('change', (color) => {
+                const hex = color.toHEXA().toString();
+                if (mode === 'headerText' || mode === 'addTxBtnText') previewBox.style.color = hex;
+                else previewBox.style.backgroundColor = hex;
+            });
+        };
+
         window.bukaPopUpColorPicker = function(accountId, mode, currentColor) {
+            currentThemePickerMode = null;
             currentPickerAccountId = accountId;
             currentPickerMode = mode; 
             
@@ -1428,13 +1542,19 @@
         }
 
         window.simpanWarnaDariPopUp = async function() {
-            if(!activePickrInstance || !currentPickerAccountId) return;
+            if(!activePickrInstance) return;
             const finalHex = activePickrInstance.getColor().toHEXA().toString();
-            
-            if(currentPickerMode === 'bg') {
-                await window.ubahWarnaAkun(currentPickerAccountId, finalHex);
-            } else if (currentPickerMode === 'text') {
-                await window.ubahWarnaFontAkun(currentPickerAccountId, finalHex);
+
+            if (currentThemePickerMode) {
+                appThemeSettings[currentThemePickerMode] = finalHex;
+                await syncThemeSettingsToDb();
+                currentThemePickerMode = null;
+            } else if (currentPickerAccountId) {
+                if(currentPickerMode === 'bg') {
+                    await window.ubahWarnaAkun(currentPickerAccountId, finalHex);
+                } else if (currentPickerMode === 'text') {
+                    await window.ubahWarnaFontAkun(currentPickerAccountId, finalHex);
+                }
             }
             window.tutupPopUpColorPicker();
         }
@@ -1447,6 +1567,7 @@
                 activePickrInstance = null;
             }
             currentPickerAccountId = null;
+            currentThemePickerMode = null;
         }
 
         window.ubahWarnaAkun = async function(accountId, hexValue) {
@@ -1852,22 +1973,22 @@
         </div>
 
         <div id="main-screen" class="hidden">
-            <div style="background-color: var(--header-bg-color);" class="text-white p-5 rounded-b-[2rem] shadow-lg relative">
+            <div style="background-color: var(--header-bg-color);" class="header-text-dynamic p-5 rounded-b-[2rem] shadow-lg relative">
                 <div class="flex justify-between items-center mb-4">
                     <div>
-                        <p class="text-[10px] uppercase tracking-wider text-slate-400">Pemilik Akun</p>
-                        <span id="user-name" class="text-xs font-bold block truncate max-w-[150px] text-indigo-300">Memuat...</span>
+                        <p class="text-[10px] uppercase tracking-wider header-text-dynamic-muted">Pemilik Akun</p>
+                        <span id="user-name" class="text-xs font-bold block truncate max-w-[150px] header-text-dynamic">Memuat...</span>
                     </div>
                     <div class="flex items-center gap-2">
                         <button id="dark-mode-toggle-btn" onclick="window.toggleDarkMode()" class="text-sm bg-white/10 w-8 h-8 flex items-center justify-center rounded-xl font-bold" title="Mode Gelap">🌙</button>
                         <button onclick="logoutUang()" class="text-[10px] bg-white/10 px-2.5 py-1.5 rounded-xl font-bold">Keluar</button>
                     </div>
                 </div>
-                <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Total Kekayaan Bersih</p>
-                <h2 id="total-saldo" class="text-3xl font-black tracking-tight text-white mt-0.5">Rp 0</h2>
+                <p class="text-[10px] font-bold uppercase tracking-wider header-text-dynamic-muted">Total Kekayaan Bersih</p>
+                <h2 id="total-saldo" class="text-3xl font-black tracking-tight header-text-dynamic mt-0.5">Rp 0</h2>
                 
-                <button onclick="openTransactionModal()" class="absolute -bottom-5 right-6 text-white font-bold py-2.5 px-4 rounded-xl shadow-md text-xs bg-primary-theme">
-                    ➕ Tambah Transaksi
+                <button onclick="openTransactionModal()" class="absolute -bottom-5 right-6 font-bold py-2.5 px-4 rounded-xl shadow-md text-xs bg-add-tx-btn text-add-tx-btn-dynamic">
+                    <span class="font-black">+</span> Tambah Transaksi
                 </button>
             </div>
 
@@ -2071,6 +2192,11 @@
             </div>
 
             <div id="tab-fitur" class="p-4 space-y-4 hidden">
+                <div class="bg-white p-4 rounded-2xl border border-slate-100 shadow-xs space-y-3 custom-card-bg">
+                    <h3 class="text-xs font-black text-slate-400 uppercase tracking-wider">🎨 Kustomisasi Warna Header & Tombol</h3>
+                    <div id="theme-setting-swatches" class="space-y-2"></div>
+                </div>
+
                 <div class="bg-white p-4 rounded-2xl border border-slate-100 shadow-xs space-y-3 custom-card-bg">
                     <h3 class="text-xs font-black text-slate-400 uppercase tracking-wider">⚙️ Pengaturan Transaksi</h3>
                     <div>
