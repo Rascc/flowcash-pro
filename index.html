@@ -1,6 +1,11 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
+    <script>
+        if (localStorage.getItem('flowcash-dark-mode') === '1') {
+            document.documentElement.classList.add('dark-mode');
+        }
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FlowCash Pro</title>
@@ -34,6 +39,7 @@
             font-family: 'Plus Jakarta Sans', sans-serif; 
             background-color: #f8fafc; 
             color: var(--app-text-color);
+            transition: background-color 0.3s ease, color 0.3s ease;
         }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -53,6 +59,75 @@
         .text-primary-theme { color: var(--primary-theme-color) !important; }
         .border-primary-theme { border-color: var(--primary-theme-color) !important; }
         .app-global-text { color: var(--app-text-color) !important; }
+
+        /* ===== Mode Gelap: navy lembut + gradient ===== */
+        html.dark-mode {
+            --card-bg-color: #1a2340;
+            --primary-theme-color: #6366f1;
+            --header-bg-color: #0b1226;
+            --app-text-color: #e5e9f5;
+            --input-bg-color: #212c4f;
+            --border-color: #2e3a63;
+        }
+        html.dark-mode body {
+            background-color: #0d1428;
+        }
+        html.dark-mode #app {
+            background: linear-gradient(165deg, #0d1428 0%, #1b2547 45%, #0f1a33 100%) !important;
+        }
+        html.dark-mode .bg-white,
+        html.dark-mode .bg-slate-50 {
+            background-color: #1a2340 !important;
+        }
+        html.dark-mode .bg-slate-100 {
+            background-color: #212c4f !important;
+        }
+        html.dark-mode .bg-slate-200 {
+            background-color: #2b3760 !important;
+        }
+        html.dark-mode .text-slate-900,
+        html.dark-mode .text-slate-800,
+        html.dark-mode .text-slate-700 {
+            color: #eef1fa !important;
+        }
+        html.dark-mode .text-slate-600,
+        html.dark-mode .text-slate-500,
+        html.dark-mode .text-slate-400 {
+            color: #94a3c4 !important;
+        }
+        html.dark-mode .border-slate-100,
+        html.dark-mode .border-slate-200,
+        html.dark-mode .border {
+            border-color: #2e3a63 !important;
+        }
+        html.dark-mode ::placeholder { color: #7583ac !important; opacity: 1; }
+        html.dark-mode .bg-indigo-50,
+        html.dark-mode .bg-indigo-50\/50 {
+            background-color: rgba(99, 102, 241, 0.16) !important;
+        }
+        html.dark-mode .bg-rose-50 { background-color: rgba(244, 63, 94, 0.14) !important; }
+        html.dark-mode .bg-rose-100 { background-color: rgba(244, 63, 94, 0.18) !important; }
+        html.dark-mode .bg-emerald-100 { background-color: rgba(16, 185, 129, 0.18) !important; }
+        html.dark-mode .bg-amber-100 { background-color: rgba(245, 158, 11, 0.18) !important; }
+        html.dark-mode .text-indigo-600,
+        html.dark-mode .text-indigo-700 { color: #a5b4fc !important; }
+        html.dark-mode .text-rose-600,
+        html.dark-mode .text-rose-700 { color: #fda4af !important; }
+        html.dark-mode .text-emerald-600,
+        html.dark-mode .text-emerald-700 { color: #6ee7b7 !important; }
+        html.dark-mode .text-amber-600 { color: #fcd34d !important; }
+        html.dark-mode .shadow-xs,
+        html.dark-mode .shadow-md,
+        html.dark-mode .shadow-lg,
+        html.dark-mode .shadow-2xl {
+            box-shadow: 0 4px 20px rgba(0,0,0,0.35) !important;
+        }
+        #dark-mode-toggle-btn {
+            transition: transform 0.3s ease;
+        }
+        #dark-mode-toggle-btn:active {
+            transform: scale(0.85) rotate(20deg);
+        }
 
         .pcr-app {
             position: relative !important;
@@ -494,15 +569,16 @@
             }
 
             const lineChartContainer = document.getElementById('line-chart-container');
+            let labelsLine = [];
+            let dataPointsLine = [];
+            let incomePerPeriod = [];
+            let expensePerPeriod = [];
+
             if(filteredTx.length === 0) {
                 lineChartContainer.innerHTML = `<p class="text-xs text-slate-400 text-center py-14">Data tidak cukup untuk memetakan tren.</p>`;
             } else {
                 lineChartContainer.innerHTML = '<canvas id="chartTrenFinansial"></canvas>';
                 
-                let labelsLine = [];
-                let dataPointsLine = [];
-                let incomePerPeriod = [];
-                let expensePerPeriod = [];
                 let cumulativeNet = 0;
 
                 if (targetMonthValue === "all") {
@@ -739,10 +815,13 @@
                 }
             });
 
+            const isDarkMode = document.documentElement.classList.contains('dark-mode');
             let cellsHtml = "";
             for(let day = 1; day <= totalDays; day++) {
                 const act = activityMap[day];
-                let bgStyle = "background-color: #f1f5f9; color: #94a3b8;";
+                let bgStyle = isDarkMode
+                    ? "background-color: #212c4f; color: #7583ac;"
+                    : "background-color: #f1f5f9; color: #94a3b8;";
                 
                 if(act.count > 0) {
                     const primaryColor = '#4f46e5';
@@ -779,6 +858,34 @@
             txCurrentPage = 1;
             renderHistory();
         }
+
+        function updateChartDefaultsForTheme() {
+            const isDark = document.documentElement.classList.contains('dark-mode');
+            Chart.defaults.color = isDark ? '#94a3c4' : '#64748b';
+            Chart.defaults.borderColor = isDark ? '#2e3a63' : '#e2e8f0';
+        }
+        updateChartDefaultsForTheme();
+        if (document.documentElement.classList.contains('dark-mode')) {
+            const initialDarkBtn = document.getElementById('dark-mode-toggle-btn');
+            if (initialDarkBtn) initialDarkBtn.innerText = '☀️';
+        }
+
+        function updateThemeColorMeta() {
+            const isDark = document.documentElement.classList.contains('dark-mode');
+            const meta = document.querySelector('meta[name="theme-color"]');
+            if (meta) meta.setAttribute('content', isDark ? '#0d1428' : '#ffffff');
+        }
+        updateThemeColorMeta();
+
+        window.toggleDarkMode = function() {
+            const isDark = document.documentElement.classList.toggle('dark-mode');
+            localStorage.setItem('flowcash-dark-mode', isDark ? '1' : '0');
+            const btn = document.getElementById('dark-mode-toggle-btn');
+            if (btn) btn.innerText = isDark ? '☀️' : '🌙';
+            updateChartDefaultsForTheme();
+            updateThemeColorMeta();
+            renderDashboard();
+        };
 
         window.showToast = function(msg) {
             const el = document.getElementById("toast-msg");
@@ -883,8 +990,15 @@
             document.getElementById("tx-modal").classList.add("flex");
             
             const now = new Date();
-            document.getElementById("tx-date").value = now.toISOString().substring(0, 10);
+            const localDateStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+            document.getElementById("tx-date").value = localDateStr;
             document.getElementById("tx-time").value = String(now.getHours()).padStart(2, '0') + ":" + String(now.getMinutes()).padStart(2, '0');
+
+            const defaultAccId = getAkunDefaultId();
+            if (defaultAccId && accounts.some(a => a.id === defaultAccId)) {
+                document.getElementById("tx-acc").value = defaultAccId;
+            }
+
             toggleTransferFields();
         }
 
@@ -1027,12 +1141,19 @@
                 await updateDoc(doc(db, `users/${currentUser.uid}/accounts/${accAsal.id}`), {balance: accAsal.balance});
                 if (editingTxId) {
                     await setDoc(doc(db, `users/${currentUser.uid}/transactions/${editingTxId}`), newTx);
+                    const idx = transactions.findIndex(t => t.id === editingTxId);
+                    if (idx !== -1) transactions[idx] = { id: editingTxId, ...newTx };
                 } else {
-                    await addDoc(collection(db, `users/${currentUser.uid}/transactions`), newTx);
+                    const newDocRef = await addDoc(collection(db, `users/${currentUser.uid}/transactions`), newTx);
+                    transactions.push({ id: newDocRef.id, ...newTx });
                 }
+                transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
 
                 closeTransactionModal();
-                await muatData();
+                hitungUang();
+                renderDashboard();
+                renderHistory();
+                muatData();
             } catch(err) { showToast(err.message); }
         }
 
@@ -1077,7 +1198,12 @@
                     if (accAsal) await updateDoc(doc(db, `users/${currentUser.uid}/accounts/${accAsal.id}`), {balance: accAsal.balance});
                 }
                 await deleteDoc(doc(db, `users/${currentUser.uid}/transactions/${id}`));
-                await muatData();
+                const delIdx = transactions.findIndex(t => t.id === id);
+                if (delIdx !== -1) transactions.splice(delIdx, 1);
+                hitungUang();
+                renderDashboard();
+                renderHistory();
+                muatData();
             }, "Hapus");
         }
 
@@ -1204,7 +1330,25 @@
             renderHistory();
         }
 
+        window.simpanAkunDefault = function(accId) {
+            localStorage.setItem('flowcash-default-account', accId);
+            showToast("Akun default transaksi disimpan.");
+        };
+
+        function getAkunDefaultId() {
+            return localStorage.getItem('flowcash-default-account');
+        }
+
+        function renderSettingDefaultAccountOptions() {
+            const sel = document.getElementById("setting-default-account");
+            if (!sel) return;
+            sel.innerHTML = accounts.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+            const saved = getAkunDefaultId();
+            if (saved && accounts.some(a => a.id === saved)) sel.value = saved;
+        }
+
         function renderAccountManager() {
+            renderSettingDefaultAccountOptions();
             const container = document.getElementById("account-list-container");
             container.innerHTML = accounts.map((acc, index) => {
                 const accColor = getAccountColor(acc, index);
@@ -1349,28 +1493,37 @@
             }, "Hapus");
         }
 
-        window.toggleCategoryAccordion = function(id) {
+        let openCategoryAccordions = new Set();
+
+        window.toggleCategoryAccordion = function(key) {
+            const id = 'accordion-' + key.replace(/[^a-zA-Z0-9]/g, '_');
             const content = document.getElementById(id);
-            if(content.classList.contains('hidden')) content.classList.remove('hidden');
-            else content.classList.add('hidden');
+            if(!content) return;
+            if(content.classList.contains('hidden')) {
+                content.classList.remove('hidden');
+                openCategoryAccordions.add(key);
+            } else {
+                content.classList.add('hidden');
+                openCategoryAccordions.delete(key);
+            }
         }
 
         function renderCategoryManager() {
             const container = document.getElementById("category-list-container");
             let html = "";
-            let uniqueIdIdx = 0;
 
             ['income', 'expense'].forEach(type => {
                 let judulTipe = type === 'income' ? 'Pemasukan' : 'Pengeluaran';
                 html += `<div class="bg-slate-50 p-4 rounded-2xl mb-4 custom-card-bg border">
                             <h4 class="text-xs font-black uppercase mb-3 text-slate-400">Struktur ${judulTipe}</h4>`;
                 Object.keys(customCategories[type]).forEach((cat, catIdx) => {
-                    uniqueIdIdx++;
-                    const accordionId = `accordion-${type}-${uniqueIdIdx}`;
+                    const accKey = `${type}::${cat}`;
+                    const accordionId = 'accordion-' + accKey.replace(/[^a-zA-Z0-9]/g, '_');
+                    const isOpen = openCategoryAccordions.has(accKey);
                     const catColor = defaultHexColors[catIdx % 6];
                     html += `
                         <div class="bg-white rounded-xl border border-slate-200 mb-2 overflow-hidden shadow-xs custom-card-bg">
-                            <div onclick="toggleCategoryAccordion('${accordionId}')" class="flex justify-between items-center p-3 bg-slate-50/50 cursor-pointer text-xs">
+                            <div onclick="toggleCategoryAccordion('${accKey.replace(/'/g, "\\'")}')" class="flex justify-between items-center p-3 bg-slate-50/50 cursor-pointer text-xs">
                                 <div class="flex items-center gap-2">
                                     <span class="w-1.5 h-3 rounded-full" style="background-color: ${catColor}"></span>
                                     <span class="font-bold">${getCategoryIcon(cat)} ${cat}</span>
@@ -1380,7 +1533,7 @@
                                     <button onclick="event.stopPropagation(); reqDeleteCategory('${type}', '${cat}')" class="text-rose-500">🗑️</button>
                                 </div>
                             </div>
-                            <div id="${accordionId}" class="hidden p-3 bg-white border-t border-slate-100 space-y-2 custom-card-bg">
+                            <div id="${accordionId}" class="${isOpen ? '' : 'hidden'} p-3 bg-white border-t border-slate-100 space-y-2 custom-card-bg">
                                 <div class="pl-2 border-l-2 space-y-1.5" style="border-color: ${catColor}">
                     `;
                     customCategories[type][cat].forEach((sub) => {
@@ -1406,6 +1559,10 @@
                 if(!newName || newName === oldName) return;
                 customCategories[type][newName] = customCategories[type][oldName];
                 delete customCategories[type][oldName];
+                if (openCategoryAccordions.has(`${type}::${oldName}`)) {
+                    openCategoryAccordions.delete(`${type}::${oldName}`);
+                    openCategoryAccordions.add(`${type}::${newName}`);
+                }
                 await syncCategoriesToDb();
                 await muatData();
             });
@@ -1414,6 +1571,7 @@
         window.reqDeleteCategory = function(type, cat) {
             openConfirmModal("Hapus Kategori?", `Hapus kategori "${cat}"?`, async () => {
                 delete customCategories[type][cat];
+                openCategoryAccordions.delete(`${type}::${cat}`);
                 await syncCategoriesToDb();
                 await muatData();
             }, "Hapus");
@@ -1485,15 +1643,20 @@
                     const existing = reminders.find(r => r.id === editingReminderId);
                     const updatedRem = { title, type, category, amount, dueDate, status: existing ? existing.status : "Belum Dibayar" };
                     await setDoc(doc(db, `users/${currentUser.uid}/reminders/${editingReminderId}`), updatedRem);
+                    const idx = reminders.findIndex(r => r.id === editingReminderId);
+                    if (idx !== -1) reminders[idx] = { id: editingReminderId, ...updatedRem };
                     showToast("Pengingat berhasil diperbarui!");
                 } else {
                     const newRem = { title, type, category, amount, dueDate, status: "Belum Dibayar" };
-                    await addDoc(collection(db, `users/${currentUser.uid}/reminders`), newRem);
+                    const newDocRef = await addDoc(collection(db, `users/${currentUser.uid}/reminders`), newRem);
+                    reminders.push({ id: newDocRef.id, ...newRem });
                     showToast("Pengingat baru berhasil dibuat!");
                 }
+                reminders.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
 
                 tutupModalReminderBaru();
-                await muatData();
+                renderReminders();
+                muatData();
             } catch(err) { showToast(err.message); }
         };
 
@@ -1550,7 +1713,8 @@
             document.getElementById("tx-notes").value = `Pelunasan Pengingat: ${rem.title}`;
             
             const now = new Date();
-            document.getElementById("tx-date").value = now.toISOString().substring(0, 10);
+            const localDateStrBayar = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+            document.getElementById("tx-date").value = localDateStrBayar;
             document.getElementById("tx-time").value = String(now.getHours()).padStart(2, '0') + ":" + String(now.getMinutes()).padStart(2, '0');
             
             document.getElementById("tx-modal").classList.remove("hidden");
@@ -1694,7 +1858,10 @@
                         <p class="text-[10px] uppercase tracking-wider text-slate-400">Pemilik Akun</p>
                         <span id="user-name" class="text-xs font-bold block truncate max-w-[150px] text-indigo-300">Memuat...</span>
                     </div>
-                    <button onclick="logoutUang()" class="text-[10px] bg-white/10 px-2.5 py-1.5 rounded-xl font-bold">Keluar</button>
+                    <div class="flex items-center gap-2">
+                        <button id="dark-mode-toggle-btn" onclick="window.toggleDarkMode()" class="text-sm bg-white/10 w-8 h-8 flex items-center justify-center rounded-xl font-bold" title="Mode Gelap">🌙</button>
+                        <button onclick="logoutUang()" class="text-[10px] bg-white/10 px-2.5 py-1.5 rounded-xl font-bold">Keluar</button>
+                    </div>
                 </div>
                 <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Total Kekayaan Bersih</p>
                 <h2 id="total-saldo" class="text-3xl font-black tracking-tight text-white mt-0.5">Rp 0</h2>
@@ -1904,6 +2071,14 @@
             </div>
 
             <div id="tab-fitur" class="p-4 space-y-4 hidden">
+                <div class="bg-white p-4 rounded-2xl border border-slate-100 shadow-xs space-y-3 custom-card-bg">
+                    <h3 class="text-xs font-black text-slate-400 uppercase tracking-wider">⚙️ Pengaturan Transaksi</h3>
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Akun Default saat Buat Transaksi</label>
+                        <select id="setting-default-account" onchange="window.simpanAkunDefault(this.value)" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-bold custom-card-bg"></select>
+                    </div>
+                </div>
+
                 <div class="bg-white p-4 rounded-2xl border border-slate-100 shadow-xs space-y-3 custom-card-bg">
                     <div class="flex justify-between items-center">
                         <h3 class="text-xs font-black text-slate-400 uppercase tracking-wider">Kelola Akun Kas & Warna Pro</h3>
