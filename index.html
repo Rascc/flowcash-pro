@@ -1123,7 +1123,7 @@
 
                 if(!amount || amount <= 0) return openConfirmModal("Kesalahan", "Nominal tidak valid!", null);
 
-                const finalDate = `${dateRaw}T${timeStr}:00.000Z`;
+                const finalDate = `${dateRaw}T${timeStr}:00`;
                 const newTx = {
                     type, accountId: accId, amount, notes, date: finalDate,
                     category: type === 'transfer' ? 'Transfer' : document.getElementById("tx-kat").value,
@@ -1743,7 +1743,10 @@
                         html += `
                             <div class="flex justify-between items-center text-xs p-2 bg-slate-50 rounded-lg custom-card-bg border">
                                 <span>📄 ${sub}</span>
-                                <button onclick="window.deleteSubCategory('${type}', '${cat}', '${sub}')" class="text-rose-400">✕</button>
+                                <div class="flex items-center gap-2.5">
+                                    <button onclick="window.editSubCategory('${type}', '${cat}', '${sub.replace(/'/g, "\\'")}')" class="text-blue-500">✏️</button>
+                                    <button onclick="window.deleteSubCategory('${type}', '${cat}', '${sub.replace(/'/g, "\\'")}')" class="text-rose-400">✕</button>
+                                </div>
                             </div>
                         `;
                     });
@@ -1783,6 +1786,16 @@
         window.reqAddSubCategory = function(type, cat) {
             openPromptModal(`Tambah Sub`, "Nama sub-kategori baru", "", async (subName) => {
                 customCategories[type][cat].push(subName);
+                await syncCategoriesToDb();
+            });
+        }
+
+        window.editSubCategory = function(type, cat, oldSub) {
+            openPromptModal("Ubah Nama Sub-Kategori", "Ubah menjadi...", oldSub, async (newSub) => {
+                if(!newSub || newSub === oldSub) return;
+                const idx = customCategories[type][cat].indexOf(oldSub);
+                if (idx === -1) return;
+                customCategories[type][cat][idx] = newSub;
                 await syncCategoriesToDb();
             });
         }
