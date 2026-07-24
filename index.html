@@ -185,6 +185,12 @@
         let chartWeekdayInstance = null;
         let editingTxId = null;
         let editingReminderId = null;
+        let pendingPartialPayment = null;
+        let pendingPartialPaymentEdit = null;
+
+        function formatDateLocal(d) {
+            return String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear();
+        }
 
         let dialogConfirmCallback = null;
         let heatmapSelectedDate = null; 
@@ -431,14 +437,15 @@
         }
 
         function renderDashboard() {
+            accounts.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
             const listHtml = accounts.map((acc, index) => {
                 const accColor = getAccountColor(acc, index);
                 const fontColor = getAccountFontColor(acc);
                 return `
-                    <div id="card-acc-dash-${acc.id}" style="background-color: ${accColor}; color: ${fontColor};" class="p-4 rounded-2xl min-w-[160px] flex-shrink-0 shadow-md relative overflow-hidden transition-all">
+                    <div id="card-acc-dash-${acc.id}" style="background-color: ${accColor}; color: ${fontColor};" class="p-4 rounded-2xl shadow-md relative overflow-hidden transition-all flex justify-between items-center">
                         <div class="absolute -right-4 -bottom-4 w-12 h-12 bg-white/10 rounded-full"></div>
-                        <p class="text-[10px] opacity-70 font-bold uppercase tracking-wider truncate">${acc.name}</p>
-                        <p class="text-base font-black mt-2">Rp ${acc.balance.toLocaleString('id-ID')}</p>
+                        <p class="text-[11px] opacity-70 font-bold uppercase tracking-wider truncate z-10">${acc.name}</p>
+                        <p class="text-base font-black z-10">Rp ${acc.balance.toLocaleString('id-ID')}</p>
                     </div>
                 `;
             }).join('');
@@ -1176,9 +1183,19 @@
                     await setDoc(doc(db, `users/${currentUser.uid}/transactions/${editingTxId}`), newTx);
                     const idx = transactions.findIndex(t => t.id === editingTxId);
                     if (idx !== -1) transactions[idx] = { id: editingTxId, ...newTx };
+
+                    if (pendingPartialPaymentEdit) {
+                        await applyEditedPartialPayment(pendingPartialPaymentEdit.reminderId, pendingPartialPaymentEdit.idx, newTx);
+                        pendingPartialPaymentEdit = null;
+                    }
                 } else {
                     const newDocRef = await addDoc(collection(db, `users/${currentUser.uid}/transactions`), newTx);
                     transactions.push({ id: newDocRef.id, ...newTx });
+
+                    if (pendingPartialPayment) {
+                        await applyPendingPartialPayment(pendingPartialPayment.reminderId, newDocRef.id, newTx);
+                        pendingPartialPayment = null;
+                    }
                 }
                 transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
 
@@ -1188,6 +1205,45 @@
                 renderHistory();
                 muatData();
             } catch(err) { showToast(err.message); }
+        }
+
+        async function applyPendingPartialPayment(reminderId, txId, tx) {
+            const rem = reminders.find(r => r.id === reminderId);
+            if (!rem) return;
+            const paidAmount = tx.amount;
+            const newRemAmount = Math.max(0, rem.amount - paidAmount);
+            const historyEntry = { date: formatDateLocal(new Date(tx.date)), amount: paidAmount, accountId: tx.accountId, txId: txId };
+            const newHistory = [...(rem.paymentHistory || []), historyEntry];
+            const newStatus = newRemAmount <= 0 ? "Lunas" : rem.status;
+
+            await updateDoc(doc(db, `users/${currentUser.uid}/reminders/${reminderId}`), {
+                amount: newRemAmount, paymentHistory: newHistory, status: newStatus
+            });
+            rem.amount = newRemAmount;
+            rem.paymentHistory = newHistory;
+            rem.status = newStatus;
+            renderReminders();
+        }
+
+        async function applyEditedPartialPayment(reminderId, idx, tx) {
+            const rem = reminders.find(r => r.id === reminderId);
+            if (!rem || !rem.paymentHistory || !rem.paymentHistory[idx]) return;
+            const oldAmount = rem.paymentHistory[idx].amount;
+            const newAmount = tx.amount;
+            const diff = newAmount - oldAmount;
+            const newRemAmount = Math.max(0, rem.amount - diff);
+
+            const newHistory = [...rem.paymentHistory];
+            newHistory[idx] = { ...newHistory[idx], amount: newAmount, accountId: tx.accountId, date: formatDateLocal(new Date(tx.date)) };
+            const newStatus = newRemAmount <= 0 ? "Lunas" : "Belum Dibayar";
+
+            await updateDoc(doc(db, `users/${currentUser.uid}/reminders/${reminderId}`), {
+                amount: newRemAmount, paymentHistory: newHistory, status: newStatus
+            });
+            rem.amount = newRemAmount;
+            rem.paymentHistory = newHistory;
+            rem.status = newStatus;
+            renderReminders();
         }
 
         window.bukaEditTx = function(id) {
@@ -1201,7 +1257,7 @@
             document.getElementById("tx-nominal").value = tx.amount.toLocaleString('id-ID');
             document.getElementById("tx-notes").value = tx.notes || "";
             const d = new Date(tx.date);
-            document.getElementById("tx-date").value = d.toISOString().substring(0,10);
+            document.getElementById("tx-date").value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
             document.getElementById("tx-time").value = String(d.getHours()).padStart(2,'0') + ":" + String(d.getMinutes()).padStart(2,'0');
             if(tx.type === 'transfer') {
                 document.getElementById("tx-target").value = tx.targetAccountId;
@@ -1405,6 +1461,7 @@
 
         function renderAccountManager() {
             renderSettingDefaultAccountOptions();
+            accounts.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
             const container = document.getElementById("account-list-container");
             container.innerHTML = accounts.map((acc, index) => {
                 const accColor = getAccountColor(acc, index);
@@ -1427,7 +1484,9 @@
                                 <button onclick="window.bukaPopUpColorPicker('${acc.id}', 'bg', '${accColor}')" class="text-[10px] font-extrabold px-2.5 py-1.5 bg-white/20 hover:bg-white/30 rounded-xl transition-all flex items-center gap-1.5 backdrop-blur-xs">🎨 Latar</button>
                                 <button onclick="window.bukaPopUpColorPicker('${acc.id}', 'text', '${fontColor}')" class="text-[10px] font-extrabold px-2.5 py-1.5 bg-white/20 hover:bg-white/30 rounded-xl transition-all flex items-center gap-1.5 backdrop-blur-xs">✍️ Teks</button>
                             </div>
-                            <div class="flex gap-2">
+                            <div class="flex gap-1.5">
+                                <button onclick="window.geserUrutanAkun('${acc.id}', -1)" ${index === 0 ? 'disabled' : ''} class="p-1.5 text-xs bg-white/20 hover:bg-white/30 rounded-lg transition-all disabled:opacity-30" title="Naik">⬆️</button>
+                                <button onclick="window.geserUrutanAkun('${acc.id}', 1)" ${index === accounts.length - 1 ? 'disabled' : ''} class="p-1.5 text-xs bg-white/20 hover:bg-white/30 rounded-lg transition-all disabled:opacity-30" title="Turun">⬇️</button>
                                 <button onclick="reqRenameAccount('${acc.id}', '${acc.name}')" class="p-1.5 text-xs bg-white/20 hover:bg-white/30 rounded-lg transition-all" title="Ubah Nama">✏️</button>
                                 <button onclick="reqDeleteAccount('${acc.id}', '${acc.name}')" class="p-1.5 text-xs bg-rose-500/30 hover:bg-rose-600/50 rounded-lg text-white transition-all" title="Hapus Akun">🗑️</button>
                             </div>
@@ -1436,6 +1495,29 @@
                 `;
             }).join('') || `<p class="text-xs text-slate-400">Belum ada akun kustom.</p>`;
         }
+
+        window.geserUrutanAkun = async function(accId, arah) {
+            accounts.forEach((a, i) => { if (a.order === undefined || a.order === null) a.order = i; });
+            accounts.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+
+            const idx = accounts.findIndex(a => a.id === accId);
+            const targetIdx = idx + arah;
+            if (idx === -1 || targetIdx < 0 || targetIdx >= accounts.length) return;
+
+            const a1 = accounts[idx];
+            const a2 = accounts[targetIdx];
+            const tempOrder = a1.order;
+            a1.order = a2.order;
+            a2.order = tempOrder;
+
+            await updateDoc(doc(db, `users/${currentUser.uid}/accounts/${a1.id}`), { order: a1.order });
+            await updateDoc(doc(db, `users/${currentUser.uid}/accounts/${a2.id}`), { order: a2.order });
+
+            accounts.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+            renderAccountManager();
+            renderDashboard();
+            updateDropdowns();
+        };
 
         let currentThemePickerMode = null;
 
@@ -1792,6 +1874,7 @@
                 const isPaid = r.status === "Lunas";
                 const badgeBg = isPaid ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700";
                 const borderLeft = isPaid ? "border-l-4 border-emerald-500" : "border-l-4 border-amber-500";
+                const history = r.paymentHistory || [];
                 
                 return `
                     <div class="bg-white p-4 rounded-2xl shadow-xs border border-slate-200 ${borderLeft} flex flex-col gap-3 custom-card-bg">
@@ -1802,11 +1885,32 @@
                                 <p class="text-[10px] text-slate-400 font-semibold mt-0.5">📂 Kategori: ${r.category} | Tempo: ${r.dueDate}</p>
                             </div>
                             <div class="text-right">
+                                <span class="text-[9px] text-slate-400 font-bold uppercase block">${history.length > 0 ? 'Sisa Tagihan' : 'Total Tagihan'}</span>
                                 <span class="text-xs font-black text-slate-900 block">Rp ${r.amount.toLocaleString('id-ID')}</span>
                             </div>
                         </div>
+                        ${history.length > 0 ? `
+                            <div class="bg-slate-50 rounded-xl p-2.5 custom-card-bg border border-slate-100 space-y-1">
+                                <p class="text-[9px] font-black uppercase text-slate-400 tracking-wider">Riwayat Pembayaran Sebagian</p>
+                                ${history.map((h, idx) => {
+                                    const accName = h.accountId ? (accounts.find(a => a.id === h.accountId)?.name || '-') : '-';
+                                    return `
+                                    <div class="flex justify-between items-center text-[10px]">
+                                        <span class="text-slate-400 font-semibold">${h.date} ${h.accountId ? '• ' + accName : ''}</span>
+                                        <div class="flex items-center gap-2">
+                                            <span class="font-bold text-slate-700">Rp ${h.amount.toLocaleString('id-ID')}</span>
+                                            <button onclick="window.editPembayaranSebagian('${r.id}', ${idx})" class="text-blue-500">✏️</button>
+                                            <button onclick="window.hapusPembayaranSebagian('${r.id}', ${idx})" class="text-rose-400">✕</button>
+                                        </div>
+                                    </div>
+                                `;}).join('')}
+                            </div>
+                        ` : ''}
                         <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                            ${!isPaid ? `<button onclick="window.bayarViaKas('${r.id}')" class="bg-indigo-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-xl">💸 Bayar via Kas</button>` : ''}
+                            ${!isPaid ? `
+                                <button onclick="window.bayarSebagian('${r.id}')" class="bg-slate-100 text-slate-600 text-[10px] font-bold px-3 py-1.5 rounded-xl custom-card-bg border">Bayar Sebagian</button>
+                                <button onclick="window.bayarViaKas('${r.id}')" class="bg-indigo-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-xl">Bayar</button>
+                            ` : ''}
                             <button onclick="window.bukaModalReminderBaru('${r.id}')" class="text-indigo-600 text-[10px] font-bold px-2 py-1.5 bg-indigo-50 rounded-xl">✏️ Edit</button>
                             <button onclick="window.konfirmasiHapusReminder('${r.id}')" class="text-rose-500 text-[10px] font-bold px-2 py-1.5 bg-rose-50 rounded-xl">Hapus</button>
                         </div>
@@ -1814,6 +1918,99 @@
                 `;
             }).join('');
         }
+
+        window.editPembayaranSebagian = function(reminderId, idx) {
+            const rem = reminders.find(r => r.id === reminderId);
+            if(!rem || !rem.paymentHistory || !rem.paymentHistory[idx]) return;
+            const entry = rem.paymentHistory[idx];
+
+            if (!entry.txId || !transactions.find(t => t.id === entry.txId)) {
+                showToast("Transaksi kas terkait tidak ditemukan (riwayat lama sebelum pembaruan ini). Hapus & catat ulang untuk edit lengkap termasuk akun.");
+                return;
+            }
+
+            pendingPartialPaymentEdit = { reminderId, idx };
+            window.bukaEditTx(entry.txId);
+        };
+
+        window.hapusPembayaranSebagian = function(reminderId, idx) {
+            const rem = reminders.find(r => r.id === reminderId);
+            if(!rem || !rem.paymentHistory || !rem.paymentHistory[idx]) return;
+            const entry = rem.paymentHistory[idx];
+
+            openConfirmModal("Hapus Riwayat Pembayaran?", `Hapus pembayaran Rp ${entry.amount.toLocaleString('id-ID')} ini? Transaksi kas terkait (jika ada) juga akan dihapus dan saldo akun dikembalikan.`, async () => {
+                const tx = entry.txId ? transactions.find(t => t.id === entry.txId) : null;
+                if (tx) {
+                    let accAsal = accounts.find(a => a.id === tx.accountId);
+                    if (tx.type === 'expense' && accAsal) accAsal.balance += tx.amount;
+                    else if (tx.type === 'income' && accAsal) accAsal.balance -= tx.amount;
+                    if (accAsal) await updateDoc(doc(db, `users/${currentUser.uid}/accounts/${accAsal.id}`), {balance: accAsal.balance});
+                    await deleteDoc(doc(db, `users/${currentUser.uid}/transactions/${entry.txId}`));
+                    const delIdx = transactions.findIndex(t => t.id === entry.txId);
+                    if (delIdx !== -1) transactions.splice(delIdx, 1);
+                }
+
+                const newRemAmount = rem.amount + entry.amount;
+                const newHistory = rem.paymentHistory.filter((h, i) => i !== idx);
+                const newStatus = "Belum Dibayar";
+
+                await updateDoc(doc(db, `users/${currentUser.uid}/reminders/${reminderId}`), {
+                    amount: newRemAmount, paymentHistory: newHistory, status: newStatus
+                });
+                rem.amount = newRemAmount;
+                rem.paymentHistory = newHistory;
+                rem.status = newStatus;
+
+                hitungUang();
+                renderDashboard();
+                renderHistory();
+                renderReminders();
+                muatData();
+                showToast("Riwayat pembayaran dihapus, saldo & sisa tagihan dikembalikan.");
+            }, "Hapus");
+        };
+
+        window.bayarSebagian = function(id) {
+            const rem = reminders.find(r => r.id === id);
+            if(!rem) return;
+
+            openPromptModal("Bayar Sebagian", "Jumlah yang dibayar (Rp)", "", (inputVal) => {
+                const amount = Number(String(inputVal).replace(/\D/g, ""));
+                if (!amount || amount <= 0) { showToast("Jumlah tidak valid."); return; }
+                if (amount > rem.amount) { showToast("Jumlah melebihi sisa tagihan."); return; }
+
+                pendingPartialPayment = { reminderId: id };
+
+                // Buka Modal Transaksi Utama & Isi Otomatis Sesuai Jumlah Yang Dibayar
+                editingTxId = null;
+                document.getElementById("modal-tx-title").innerText = `Bayar Sebagian: ${rem.title}`;
+                document.getElementById("tx-form").reset();
+
+                document.getElementById("tx-type").value = rem.type;
+                toggleTransferFields();
+
+                document.getElementById("tx-kat").value = rem.category;
+                updateSubKategoriOptions();
+
+                document.getElementById("tx-nominal").value = amount.toLocaleString('id-ID');
+                document.getElementById("tx-notes").value = `Pembayaran Sebagian: ${rem.title}`;
+
+                const defaultAccIdBayarSebagian = getAkunDefaultId();
+                if (defaultAccIdBayarSebagian && accounts.some(a => a.id === defaultAccIdBayarSebagian)) {
+                    document.getElementById("tx-acc").value = defaultAccIdBayarSebagian;
+                }
+
+                const now = new Date();
+                const localDateStrBayar = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+                document.getElementById("tx-date").value = localDateStrBayar;
+                document.getElementById("tx-time").value = String(now.getHours()).padStart(2, '0') + ":" + String(now.getMinutes()).padStart(2, '0');
+
+                document.getElementById("tx-modal").classList.remove("hidden");
+                document.getElementById("tx-modal").classList.add("flex");
+
+                showToast("Lengkapi & simpan transaksi untuk mencatat pembayaran ini.");
+            });
+        };
 
         window.bayarViaKas = function(id) {
             const rem = reminders.find(r => r.id === id);
@@ -1832,6 +2029,11 @@
             
             document.getElementById("tx-nominal").value = rem.amount.toLocaleString('id-ID');
             document.getElementById("tx-notes").value = `Pelunasan Pengingat: ${rem.title}`;
+
+            const defaultAccIdBayar = getAkunDefaultId();
+            if (defaultAccIdBayar && accounts.some(a => a.id === defaultAccIdBayar)) {
+                document.getElementById("tx-acc").value = defaultAccIdBayar;
+            }
             
             const now = new Date();
             const localDateStrBayar = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
@@ -2058,7 +2260,7 @@
 
                 <div>
                     <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2">Akun Dompet & Rekening</h3>
-                    <div class="flex space-x-3 overflow-x-auto pb-1.5 no-scrollbar" id="acc-carousel"></div>
+                    <div class="flex flex-col space-y-2.5" id="acc-carousel"></div>
                 </div>
 
                 <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs custom-card-bg">
