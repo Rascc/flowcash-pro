@@ -33,6 +33,9 @@
             --header-text-color: #ffffff;
             --add-tx-btn-color: #4f46e5;
             --add-tx-btn-text-color: #ffffff;
+            --heatmap-bg-color: #f1f5f9;
+            --heatmap-text-color: #94a3b8;
+            --heatmap-gradient-color: #4f46e5;
             --app-text-color: #1e293b;
             --input-bg-color: #f1f5f9;
             --border-color: #e2e8f0;
@@ -75,6 +78,8 @@
             --app-text-color: #e5e9f5;
             --input-bg-color: #212c4f;
             --border-color: #2e3a63;
+            --heatmap-bg-color: #212c4f;
+            --heatmap-text-color: #7583ac;
         }
         html.dark-mode body {
             background-color: #0d1428;
@@ -329,8 +334,8 @@
             }
         });
 
-        let appThemeSettings = { headerBg: null, headerText: null, addTxBtn: null, addTxBtnText: null };
-        const themeVarMap = { headerBg: '--header-bg-color', headerText: '--header-text-color', addTxBtn: '--add-tx-btn-color', addTxBtnText: '--add-tx-btn-text-color' };
+        let appThemeSettings = { headerBg: null, headerText: null, addTxBtn: null, addTxBtnText: null, heatmapBg: null, heatmapText: null, heatmapGradient: null };
+        const themeVarMap = { headerBg: '--header-bg-color', headerText: '--header-text-color', addTxBtn: '--add-tx-btn-color', addTxBtnText: '--add-tx-btn-text-color', heatmapBg: '--heatmap-bg-color', heatmapText: '--heatmap-text-color', heatmapGradient: '--heatmap-gradient-color' };
 
         function applyAppThemeSettings() {
             Object.keys(themeVarMap).forEach(k => {
@@ -897,7 +902,10 @@
             const paddedMonth = String(heatmapCurrentMonth).padStart(2, '0');
             const matchYearMonth = `${heatmapCurrentYear}-${paddedMonth}`;
             
-            let heatmapTx = transactions.filter(t => t.date.substring(0, 7) === matchYearMonth);
+            let heatmapTx = transactions.filter(t => {
+                const d = new Date(t.date);
+                return d.getFullYear() === heatmapCurrentYear && (d.getMonth() + 1) === heatmapCurrentMonth;
+            });
             if (targetAccount !== "all") {
                 heatmapTx = heatmapTx.filter(t => t.accountId === targetAccount || t.targetAccountId === targetAccount);
             }
@@ -913,19 +921,18 @@
                 }
             });
 
-            const isDarkMode = document.documentElement.classList.contains('dark-mode');
             let cellsHtml = "";
+            const heatmapBgVal = getComputedStyle(document.documentElement).getPropertyValue('--heatmap-bg-color').trim();
+            const heatmapTextVal = getComputedStyle(document.documentElement).getPropertyValue('--heatmap-text-color').trim();
+            const heatmapGradientVal = getComputedStyle(document.documentElement).getPropertyValue('--heatmap-gradient-color').trim();
             for(let day = 1; day <= totalDays; day++) {
                 const act = activityMap[day];
-                let bgStyle = isDarkMode
-                    ? "background-color: #212c4f; color: #7583ac;"
-                    : "background-color: #f1f5f9; color: #94a3b8;";
+                let bgStyle = `background-color: ${heatmapBgVal}; color: ${heatmapTextVal};`;
                 
                 if(act.count > 0) {
-                    const primaryColor = '#4f46e5';
-                    if(act.count <= 2) bgStyle = `background-color: ${primaryColor}33; color: var(--app-text-color); font-weight: bold;`;
-                    else if(act.count <= 4) bgStyle = `background-color: ${primaryColor}88; color: #ffffff; font-weight: bold;`;
-                    else bgStyle = `background-color: ${primaryColor}; color: #ffffff; font-weight: bold; box-shadow: 0 1px 2px rgba(0,0,0,0.05);`;
+                    if(act.count <= 2) bgStyle = `background-color: ${heatmapGradientVal}33; color: var(--app-text-color); font-weight: bold;`;
+                    else if(act.count <= 4) bgStyle = `background-color: ${heatmapGradientVal}88; color: #ffffff; font-weight: bold;`;
+                    else bgStyle = `background-color: ${heatmapGradientVal}; color: #ffffff; font-weight: bold; box-shadow: 0 1px 2px rgba(0,0,0,0.05);`;
                 }
                 
                 const paddedDay = String(day).padStart(2, '0');
@@ -1380,7 +1387,11 @@
             let filtered = transactions;
 
             if (heatmapSelectedDate) {
-                filtered = filtered.filter(t => t.date.substring(0, 10) === heatmapSelectedDate);
+                filtered = filtered.filter(t => {
+                    const d = new Date(t.date);
+                    const localStr = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+                    return localStr === heatmapSelectedDate;
+                });
             } else {
                 if (filterYear) {
                     filtered = filtered.filter(t => t.date.substring(0, 4) === filterYear);
@@ -1491,7 +1502,10 @@
                 { mode: 'headerBg', label: 'Warna Latar Header' },
                 { mode: 'headerText', label: 'Warna Teks Header' },
                 { mode: 'addTxBtn', label: 'Warna Tombol Tambah Transaksi' },
-                { mode: 'addTxBtnText', label: 'Warna Teks Tombol Tambah Transaksi' }
+                { mode: 'addTxBtnText', label: 'Warna Teks Tombol Tambah Transaksi' },
+                { mode: 'heatmapBg', label: 'Warna Latar Heatmap (Kosong)' },
+                { mode: 'heatmapText', label: 'Warna Teks Heatmap' },
+                { mode: 'heatmapGradient', label: 'Warna Gradien Heatmap (Aktif)' }
             ];
             container.innerHTML = rows.map(r => {
                 const val = getComputedStyle(document.documentElement).getPropertyValue(themeVarMap[r.mode]).trim();
@@ -1572,7 +1586,7 @@
             currentThemePickerMode = mode;
             currentPickerAccountId = null;
 
-            const titles = { headerBg: 'Warna Latar Header', headerText: 'Warna Teks Header', addTxBtn: 'Warna Tombol Tambah Transaksi', addTxBtnText: 'Warna Teks Tombol Tambah Transaksi' };
+            const titles = { headerBg: 'Warna Latar Header', headerText: 'Warna Teks Header', addTxBtn: 'Warna Tombol Tambah Transaksi', addTxBtnText: 'Warna Teks Tombol Tambah Transaksi', heatmapBg: 'Warna Latar Heatmap (Kosong)', heatmapText: 'Warna Teks Heatmap', heatmapGradient: 'Warna Gradien Heatmap (Aktif)' };
             document.getElementById("picker-modal-title").innerText = titles[mode];
 
             const getVal = (m) => getComputedStyle(document.documentElement).getPropertyValue(themeVarMap[m]).trim();
@@ -1580,7 +1594,8 @@
 
             const previewBox = document.getElementById("picker-live-preview");
             const isBtnMode = mode === 'addTxBtn' || mode === 'addTxBtnText';
-            previewBox.innerText = isBtnMode ? '+ Tambah Transaksi' : 'Total Kekayaan Bersih • Rp 0';
+            const isHeatmapMode = mode === 'heatmapBg' || mode === 'heatmapText' || mode === 'heatmapGradient';
+            previewBox.innerText = isBtnMode ? '+ Tambah Transaksi' : (isHeatmapMode ? '21' : 'Total Kekayaan Bersih • Rp 0');
 
             if (mode === 'headerText') {
                 previewBox.style.backgroundColor = getVal('headerBg');
@@ -1591,9 +1606,18 @@
             } else if (mode === 'addTxBtnText') {
                 previewBox.style.backgroundColor = getVal('addTxBtn');
                 previewBox.style.color = currentColor;
-            } else {
+            } else if (mode === 'addTxBtn') {
                 previewBox.style.backgroundColor = currentColor;
                 previewBox.style.color = getVal('addTxBtnText');
+            } else if (mode === 'heatmapText') {
+                previewBox.style.backgroundColor = getVal('heatmapBg');
+                previewBox.style.color = currentColor;
+            } else if (mode === 'heatmapBg') {
+                previewBox.style.backgroundColor = currentColor;
+                previewBox.style.color = getVal('heatmapText');
+            } else if (mode === 'heatmapGradient') {
+                previewBox.style.backgroundColor = currentColor;
+                previewBox.style.color = '#ffffff';
             }
 
             document.getElementById("color-picker-popup-modal").classList.remove("hidden");
@@ -1618,7 +1642,7 @@
 
             activePickrInstance.on('change', (color) => {
                 const hex = color.toHEXA().toString();
-                if (mode === 'headerText' || mode === 'addTxBtnText') previewBox.style.color = hex;
+                if (mode === 'headerText' || mode === 'addTxBtnText' || mode === 'heatmapText') previewBox.style.color = hex;
                 else previewBox.style.backgroundColor = hex;
             });
         };
