@@ -389,6 +389,8 @@
                     }
                 }
 
+                accounts.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+
                 const txSnap = await getDocs(collection(db, `users/${currentUser.uid}/transactions`));
                 transactions = [];
                 txSnap.forEach(doc => transactions.push({id: doc.id, ...doc.data()}));
@@ -1102,11 +1104,6 @@
             document.getElementById("tx-date").value = localDateStr;
             document.getElementById("tx-time").value = String(now.getHours()).padStart(2, '0') + ":" + String(now.getMinutes()).padStart(2, '0');
 
-            const defaultAccId = getAkunDefaultId();
-            if (defaultAccId && accounts.some(a => a.id === defaultAccId)) {
-                document.getElementById("tx-acc").value = defaultAccId;
-            }
-
             toggleTransferFields();
         }
 
@@ -1487,23 +1484,6 @@
             renderHistory();
         }
 
-        window.simpanAkunDefault = function(accId) {
-            localStorage.setItem('flowcash-default-account', accId);
-            showToast("Akun default transaksi disimpan.");
-        };
-
-        function getAkunDefaultId() {
-            return localStorage.getItem('flowcash-default-account');
-        }
-
-        function renderSettingDefaultAccountOptions() {
-            const sel = document.getElementById("setting-default-account");
-            if (!sel) return;
-            sel.innerHTML = accounts.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
-            const saved = getAkunDefaultId();
-            if (saved && accounts.some(a => a.id === saved)) sel.value = saved;
-        }
-
         function renderThemeSettingSwatches() {
             const container = document.getElementById("theme-setting-swatches");
             if (!container) return;
@@ -1528,7 +1508,6 @@
         }
 
         function renderAccountManager() {
-            renderSettingDefaultAccountOptions();
             accounts.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
             const container = document.getElementById("account-list-container");
             container.innerHTML = accounts.map((acc, index) => {
@@ -2133,11 +2112,6 @@
                 document.getElementById("tx-nominal").value = amount.toLocaleString('id-ID');
                 document.getElementById("tx-notes").value = `Pembayaran Sebagian: ${rem.title}`;
 
-                const defaultAccIdBayarSebagian = getAkunDefaultId();
-                if (defaultAccIdBayarSebagian && accounts.some(a => a.id === defaultAccIdBayarSebagian)) {
-                    document.getElementById("tx-acc").value = defaultAccIdBayarSebagian;
-                }
-
                 const now = new Date();
                 const localDateStrBayar = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
                 document.getElementById("tx-date").value = localDateStrBayar;
@@ -2167,11 +2141,6 @@
             
             document.getElementById("tx-nominal").value = rem.amount.toLocaleString('id-ID');
             document.getElementById("tx-notes").value = `Pelunasan Pengingat: ${rem.title}`;
-
-            const defaultAccIdBayar = getAkunDefaultId();
-            if (defaultAccIdBayar && accounts.some(a => a.id === defaultAccIdBayar)) {
-                document.getElementById("tx-acc").value = defaultAccIdBayar;
-            }
             
             const now = new Date();
             const localDateStrBayar = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
@@ -2532,14 +2501,6 @@
                 <div class="bg-white p-4 rounded-2xl border border-slate-100 shadow-xs space-y-3 custom-card-bg">
                     <h3 class="text-xs font-black text-slate-400 uppercase tracking-wider">🎨 Kustomisasi Warna Header & Tombol</h3>
                     <div id="theme-setting-swatches" class="space-y-2"></div>
-                </div>
-
-                <div class="bg-white p-4 rounded-2xl border border-slate-100 shadow-xs space-y-3 custom-card-bg">
-                    <h3 class="text-xs font-black text-slate-400 uppercase tracking-wider">⚙️ Pengaturan Transaksi</h3>
-                    <div>
-                        <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Akun Default saat Buat Transaksi</label>
-                        <select id="setting-default-account" onchange="window.simpanAkunDefault(this.value)" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-bold custom-card-bg"></select>
-                    </div>
                 </div>
 
                 <div class="bg-white p-4 rounded-2xl border border-slate-100 shadow-xs space-y-3 custom-card-bg">
