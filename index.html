@@ -157,7 +157,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-        import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, doc, setDoc, collection, addDoc, getDocs, deleteDoc, updateDoc, query, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, doc, setDoc, collection, addDoc, getDocs, deleteDoc, updateDoc, writeBatch, query, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyCa51o-rHp5-Om6uuQjbnZx9T449Zevqms",
@@ -187,6 +187,58 @@
         let editingReminderId = null;
         let pendingPartialPayment = null;
         let pendingPartialPaymentEdit = null;
+        let pendingTxFormState = null;
+
+        window.gotoTambahKategoriDariForm = function() {
+            pendingTxFormState = {
+                type: document.getElementById("tx-type").value,
+                kat: (document.getElementById("tx-kat").value === '__add_new_category__') ? '' : document.getElementById("tx-kat").value,
+                sub: (document.getElementById("tx-sub").value === '__add_new_subcategory__') ? '' : document.getElementById("tx-sub").value,
+                acc: document.getElementById("tx-acc").value,
+                target: document.getElementById("tx-target") ? document.getElementById("tx-target").value : '',
+                nominal: document.getElementById("tx-nominal").value,
+                admin: document.getElementById("tx-admin") ? document.getElementById("tx-admin").value : '',
+                notes: document.getElementById("tx-notes").value,
+                date: document.getElementById("tx-date").value,
+                time: document.getElementById("tx-time").value,
+                editingTxId: editingTxId,
+                modalTitle: document.getElementById("modal-tx-title").innerText
+            };
+
+            document.getElementById("tx-modal").classList.add("hidden");
+            document.getElementById("tx-modal").classList.remove("flex");
+
+            window.switchTab('kategori-mgr', getTabButtonEl('kategori-mgr'));
+            showToast("Tambahkan kategori di sini, lalu tekan tombol kembali di HP untuk lanjutkan transaksi.");
+        };
+
+        function restoreTxFormFromPending() {
+            const s = pendingTxFormState;
+            pendingTxFormState = null;
+
+            editingTxId = s.editingTxId;
+            document.getElementById("modal-tx-title").innerText = s.modalTitle;
+            document.getElementById("tx-type").value = s.type;
+            toggleTransferFields();
+
+            updateKategoriOptions();
+            if (s.kat) document.getElementById("tx-kat").value = s.kat;
+            updateSubKategoriOptions();
+            if (s.sub) document.getElementById("tx-sub").value = s.sub;
+
+            document.getElementById("tx-acc").value = s.acc;
+            if (document.getElementById("tx-target")) document.getElementById("tx-target").value = s.target;
+            document.getElementById("tx-nominal").value = s.nominal;
+            if (document.getElementById("tx-admin")) document.getElementById("tx-admin").value = s.admin;
+            document.getElementById("tx-notes").value = s.notes;
+            document.getElementById("tx-date").value = s.date;
+            document.getElementById("tx-time").value = s.time;
+
+            document.getElementById("tx-modal").classList.remove("hidden");
+            document.getElementById("tx-modal").classList.add("flex");
+
+            showToast("Transaksi dilanjutkan — pilihan kategori sudah diperbarui.");
+        }
 
         function formatDateLocal(d) {
             return String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear();
@@ -410,6 +462,10 @@
             const tabName = (e.state && e.state.tab) ? e.state.tab : 'dashboard';
             currentActiveTab = tabName;
             renderTabSwitch(tabName, getTabButtonEl(tabName));
+
+            if (pendingTxFormState) {
+                restoreTxFormFromPending();
+            }
         });
 
         history.replaceState({ tab: 'dashboard' }, '', '');
@@ -1076,7 +1132,17 @@
             if(type === 'transfer') return;
             const katSelect = document.getElementById("tx-kat");
             if (customCategories[type]) {
-                katSelect.innerHTML = Object.keys(customCategories[type]).map(k => `<option value="${k}">${k}</option>`).join('');
+                katSelect.innerHTML = Object.keys(customCategories[type]).map(k => `<option value="${k}">${k}</option>`).join('')
+                    + `<option value="__add_new_category__">➕ Tambah Kategori Baru</option>`;
+            }
+            updateSubKategoriOptions();
+        }
+
+        window.handleKatChange = function() {
+            const val = document.getElementById("tx-kat").value;
+            if (val === '__add_new_category__') {
+                window.gotoTambahKategoriDariForm();
+                return;
             }
             updateSubKategoriOptions();
         }
@@ -1085,10 +1151,19 @@
             const type = document.getElementById("tx-type").value;
             const kat = document.getElementById("tx-kat").value;
             const subSelect = document.getElementById("tx-sub");
+            if (kat === '__add_new_category__') { subSelect.innerHTML = ""; return; }
             if(customCategories[type] && customCategories[type][kat]) {
-                subSelect.innerHTML = customCategories[type][kat].map(s => `<option value="${s}">${s}</option>`).join('');
+                subSelect.innerHTML = customCategories[type][kat].map(s => `<option value="${s}">${s}</option>`).join('')
+                    + `<option value="__add_new_subcategory__">➕ Tambah Sub-Kategori Baru</option>`;
             } else {
                 subSelect.innerHTML = "";
+            }
+        }
+
+        window.handleSubKatChange = function() {
+            const val = document.getElementById("tx-sub").value;
+            if (val === '__add_new_subcategory__') {
+                window.gotoTambahKategoriDariForm();
             }
         }
 
@@ -1760,6 +1835,27 @@
             container.innerHTML = html;
         }
 
+        async function syncNamaKategoriKeTransaksi(type, catName, newCatName, oldSub, newSub) {
+            try {
+                const isRenameKategori = !!newCatName;
+                const matches = transactions.filter(t => {
+                    if (t.type !== type || t.category !== catName) return false;
+                    if (!isRenameKategori && t.subCategory !== oldSub) return false;
+                    return true;
+                });
+                if (matches.length === 0) return;
+
+                const batch = writeBatch(db);
+                matches.forEach(t => {
+                    if (isRenameKategori) t.category = newCatName;
+                    else t.subCategory = newSub;
+                    batch.update(doc(db, `users/${currentUser.uid}/transactions/${t.id}`), isRenameKategori ? { category: newCatName } : { subCategory: newSub });
+                });
+                await batch.commit();
+                showToast(`${matches.length} transaksi ikut diperbarui.`);
+            } catch(err) { showToast(err.message); }
+        }
+
         window.reqRenameCategory = function(type, oldName) {
             openPromptModal("Ubah Nama Kategori", "Ubah menjadi...", oldName, async (newName) => {
                 if(!newName || newName === oldName) return;
@@ -1770,6 +1866,7 @@
                     openCategoryAccordions.add(`${type}::${newName}`);
                 }
                 await syncCategoriesToDb();
+                await syncNamaKategoriKeTransaksi(type, oldName, newName, null, null);
                 await muatData();
             });
         }
@@ -1797,6 +1894,8 @@
                 if (idx === -1) return;
                 customCategories[type][cat][idx] = newSub;
                 await syncCategoriesToDb();
+                await syncNamaKategoriKeTransaksi(type, cat, null, oldSub, newSub);
+                await muatData();
             });
         }
 
@@ -2571,8 +2670,8 @@
                         <input type="text" id="tx-admin" onkeyup="formatNominalInput(this)" placeholder="Biaya Admin (Rp)" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-bold custom-card-bg">
                     </div>
                     <div class="grid grid-cols-2 gap-2" id="div-kategori">
-                        <select id="tx-kat" onchange="updateSubKategoriOptions()" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-bold custom-card-bg"></select>
-                        <select id="tx-sub" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-bold custom-card-bg"></select>
+                        <select id="tx-kat" onchange="handleKatChange()" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-bold custom-card-bg"></select>
+                        <select id="tx-sub" onchange="handleSubKatChange()" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-bold custom-card-bg"></select>
                     </div>
                     <div>
                         <label class="block text-[10px] font-bold text-slate-400 mb-1">Nominal Transaksi (Rp)</label>
