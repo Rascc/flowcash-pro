@@ -1054,14 +1054,26 @@
             dialogConfirmCallback = null;
         }
 
-        window.bukaModalKategoriBaru = function() {
+        window.bukaModalKategoriBaru = function(fixedType) {
             document.getElementById("cat-modal").classList.remove("hidden");
             document.getElementById("cat-modal").classList.add("flex");
+
+            const typeSelect = document.getElementById("cat-new-type");
+            const modalTitle = document.getElementById("cat-modal-title");
+            if (fixedType) {
+                typeSelect.value = fixedType;
+                typeSelect.classList.add("hidden");
+                modalTitle.innerText = fixedType === 'income' ? "Tambah Kategori Pemasukan" : "Tambah Kategori Pengeluaran";
+            } else {
+                typeSelect.classList.remove("hidden");
+                modalTitle.innerText = "Tambah Kategori Utama";
+            }
         }
         window.tutupModalKategoriBaru = function() {
             document.getElementById("cat-modal").classList.add("hidden");
             document.getElementById("cat-modal").classList.remove("flex");
             document.getElementById("cat-form").reset();
+            document.getElementById("cat-new-type").classList.remove("hidden");
         }
         window.simpanKategoriUtama = async function(e) {
             e.preventDefault();
@@ -1767,6 +1779,30 @@
             }
         }
 
+        window.geserUrutanKategori = async function(type, catName, arah) {
+            const keys = Object.keys(customCategories[type]);
+            const idx = keys.indexOf(catName);
+            const targetIdx = idx + arah;
+            if (idx === -1 || targetIdx < 0 || targetIdx >= keys.length) return;
+
+            [keys[idx], keys[targetIdx]] = [keys[targetIdx], keys[idx]];
+            const newObj = {};
+            keys.forEach(k => newObj[k] = customCategories[type][k]);
+            customCategories[type] = newObj;
+
+            await syncCategoriesToDb();
+        };
+
+        window.geserUrutanSubKategori = async function(type, cat, subName, arah) {
+            const arr = customCategories[type][cat];
+            const idx = arr.indexOf(subName);
+            const targetIdx = idx + arah;
+            if (idx === -1 || targetIdx < 0 || targetIdx >= arr.length) return;
+
+            [arr[idx], arr[targetIdx]] = [arr[targetIdx], arr[idx]];
+            await syncCategoriesToDb();
+        };
+
         function renderCategoryManager() {
             const container = document.getElementById("category-list-container");
             let html = "";
@@ -1774,8 +1810,12 @@
             ['income', 'expense'].forEach(type => {
                 let judulTipe = type === 'income' ? 'Pemasukan' : 'Pengeluaran';
                 html += `<div class="bg-slate-50 p-4 rounded-2xl mb-4 custom-card-bg border">
-                            <h4 class="text-xs font-black uppercase mb-3 text-slate-400">Struktur ${judulTipe}</h4>`;
-                Object.keys(customCategories[type]).forEach((cat, catIdx) => {
+                            <div class="flex justify-between items-center mb-3">
+                                <h4 class="text-xs font-black uppercase text-slate-400">Kategori ${judulTipe}</h4>
+                                <button onclick="bukaModalKategoriBaru('${type}')" class="text-white font-bold py-1 px-2.5 rounded-lg shadow-xs text-[10px] bg-primary-theme">+ Kategori</button>
+                            </div>`;
+                const catKeys = Object.keys(customCategories[type]);
+                catKeys.forEach((cat, catIdx) => {
                     const accKey = `${type}::${cat}`;
                     const accordionId = 'accordion-' + accKey.replace(/[^a-zA-Z0-9]/g, '_');
                     const isOpen = openCategoryAccordions.has(accKey);
@@ -1787,7 +1827,9 @@
                                     <span class="w-1.5 h-3 rounded-full" style="background-color: ${catColor}"></span>
                                     <span class="font-bold">${getCategoryIcon(cat)} ${cat}</span>
                                 </div>
-                                <div class="flex items-center gap-3">
+                                <div class="flex items-center gap-2.5">
+                                    <button onclick="event.stopPropagation(); window.geserUrutanKategori('${type}', '${cat.replace(/'/g, "\\'")}', -1)" ${catIdx === 0 ? 'disabled' : ''} class="disabled:opacity-20">⬆️</button>
+                                    <button onclick="event.stopPropagation(); window.geserUrutanKategori('${type}', '${cat.replace(/'/g, "\\'")}', 1)" ${catIdx === catKeys.length - 1 ? 'disabled' : ''} class="disabled:opacity-20">⬇️</button>
                                     <button onclick="event.stopPropagation(); reqRenameCategory('${type}', '${cat}')" class="text-blue-500">✏️</button>
                                     <button onclick="event.stopPropagation(); reqDeleteCategory('${type}', '${cat}')" class="text-rose-500">🗑️</button>
                                 </div>
@@ -1795,11 +1837,14 @@
                             <div id="${accordionId}" class="${isOpen ? '' : 'hidden'} p-3 bg-white border-t border-slate-100 space-y-2 custom-card-bg">
                                 <div class="pl-2 border-l-2 space-y-1.5" style="border-color: ${catColor}">
                     `;
-                    customCategories[type][cat].forEach((sub) => {
+                    const subList = customCategories[type][cat];
+                    subList.forEach((sub, subIdx) => {
                         html += `
                             <div class="flex justify-between items-center text-xs p-2 bg-slate-50 rounded-lg custom-card-bg border">
                                 <span>📄 ${sub}</span>
                                 <div class="flex items-center gap-2.5">
+                                    <button onclick="window.geserUrutanSubKategori('${type}', '${cat.replace(/'/g, "\\'")}', '${sub.replace(/'/g, "\\'")}', -1)" ${subIdx === 0 ? 'disabled' : ''} class="disabled:opacity-20">⬆️</button>
+                                    <button onclick="window.geserUrutanSubKategori('${type}', '${cat.replace(/'/g, "\\'")}', '${sub.replace(/'/g, "\\'")}', 1)" ${subIdx === subList.length - 1 ? 'disabled' : ''} class="disabled:opacity-20">⬇️</button>
                                     <button onclick="window.editSubCategory('${type}', '${cat}', '${sub.replace(/'/g, "\\'")}')" class="text-blue-500">✏️</button>
                                     <button onclick="window.deleteSubCategory('${type}', '${cat}', '${sub.replace(/'/g, "\\'")}')" class="text-rose-400">✕</button>
                                 </div>
@@ -2416,10 +2461,7 @@
             </div>
 
             <div id="tab-kategori-mgr" class="p-4 space-y-3 hidden">
-                <div class="flex justify-between items-center mb-1 text-xs">
-                    <p class="text-slate-400 font-bold text-[10px] uppercase">Arsitektur Kategori Data</p>
-                    <button onclick="bukaModalKategoriBaru()" class="text-white font-bold py-1.5 px-3 rounded-xl shadow-xs text-xs bg-primary-theme">+ Kategori</button>
-                </div>
+                <p class="text-slate-400 font-bold text-[10px] uppercase mb-1">Arsitektur Kategori Data</p>
                 <div id="category-list-container"></div>
             </div>
 
@@ -2615,7 +2657,7 @@
 
         <div id="cat-modal" class="fixed inset-0 bg-slate-900/60 items-center justify-center p-6 z-50 hidden">
             <form id="cat-form" onsubmit="simpanKategoriUtama(event)" class="bg-white w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl custom-card-bg border">
-                <h3 class="font-black text-sm">Tambah Kategori Utama</h3>
+                <h3 class="font-black text-sm" id="cat-modal-title">Tambah Kategori Utama</h3>
                 <div class="space-y-3 text-xs">
                     <select id="cat-new-type" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-bold custom-card-bg">
                         <option value="expense">Pengeluaran</option>
