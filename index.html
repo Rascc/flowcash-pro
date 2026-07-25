@@ -192,8 +192,8 @@
         window.gotoTambahKategoriDariForm = function() {
             pendingTxFormState = {
                 type: document.getElementById("tx-type").value,
-                kat: (document.getElementById("tx-kat").value === '__add_new_category__') ? '' : document.getElementById("tx-kat").value,
-                sub: (document.getElementById("tx-sub").value === '__add_new_subcategory__') ? '' : document.getElementById("tx-sub").value,
+                kat: document.getElementById("tx-kat").value,
+                sub: document.getElementById("tx-sub").value,
                 acc: document.getElementById("tx-acc").value,
                 target: document.getElementById("tx-target") ? document.getElementById("tx-target").value : '',
                 nominal: document.getElementById("tx-nominal").value,
@@ -1132,17 +1132,7 @@
             if(type === 'transfer') return;
             const katSelect = document.getElementById("tx-kat");
             if (customCategories[type]) {
-                katSelect.innerHTML = Object.keys(customCategories[type]).map(k => `<option value="${k}">${k}</option>`).join('')
-                    + `<option value="__add_new_category__">➕ Tambah Kategori Baru</option>`;
-            }
-            updateSubKategoriOptions();
-        }
-
-        window.handleKatChange = function() {
-            const val = document.getElementById("tx-kat").value;
-            if (val === '__add_new_category__') {
-                window.gotoTambahKategoriDariForm();
-                return;
+                katSelect.innerHTML = Object.keys(customCategories[type]).map(k => `<option value="${k}">${k}</option>`).join('');
             }
             updateSubKategoriOptions();
         }
@@ -1151,19 +1141,10 @@
             const type = document.getElementById("tx-type").value;
             const kat = document.getElementById("tx-kat").value;
             const subSelect = document.getElementById("tx-sub");
-            if (kat === '__add_new_category__') { subSelect.innerHTML = ""; return; }
             if(customCategories[type] && customCategories[type][kat]) {
-                subSelect.innerHTML = customCategories[type][kat].map(s => `<option value="${s}">${s}</option>`).join('')
-                    + `<option value="__add_new_subcategory__">➕ Tambah Sub-Kategori Baru</option>`;
+                subSelect.innerHTML = customCategories[type][kat].map(s => `<option value="${s}">${s}</option>`).join('');
             } else {
                 subSelect.innerHTML = "";
-            }
-        }
-
-        window.handleSubKatChange = function() {
-            const val = document.getElementById("tx-sub").value;
-            if (val === '__add_new_subcategory__') {
-                window.gotoTambahKategoriDariForm();
             }
         }
 
@@ -2610,7 +2591,7 @@
             <span id="toast-msg">Sukses</span>
         </div>
 
-        <div id="prompt-modal" class="fixed inset-0 bg-slate-900/60 items-center justify-center p-6 z-50 hidden">
+        <div id="prompt-modal" class="fixed inset-0 bg-slate-900/60 items-center justify-center p-6 z-[60] hidden">
             <div class="bg-white w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl custom-card-bg border">
                 <h3 class="font-black text-sm" id="prompt-title">Input Data</h3>
                 <input type="text" id="prompt-input" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-semibold custom-card-bg">
@@ -2621,7 +2602,7 @@
             </div>
         </div>
 
-        <div id="confirm-modal" class="fixed inset-0 bg-slate-900/40 items-center justify-center p-4 z-50 hidden">
+        <div id="confirm-modal" class="fixed inset-0 bg-slate-900/40 items-center justify-center p-4 z-[60] hidden">
             <div class="bg-white max-w-xs w-auto min-w-[240px] rounded-2xl p-5 shadow-xl border flex flex-col items-center text-center custom-card-bg">
                 <h3 class="font-extrabold text-sm" id="confirm-title">Konfirmasi</h3>
                 <p class="text-[11px] text-slate-400 mt-1 mb-4" id="confirm-message">Yakin?</p>
@@ -2670,8 +2651,14 @@
                         <input type="text" id="tx-admin" onkeyup="formatNominalInput(this)" placeholder="Biaya Admin (Rp)" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-bold custom-card-bg">
                     </div>
                     <div class="grid grid-cols-2 gap-2" id="div-kategori">
-                        <select id="tx-kat" onchange="handleKatChange()" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-bold custom-card-bg"></select>
-                        <select id="tx-sub" onchange="handleSubKatChange()" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-bold custom-card-bg"></select>
+                        <div class="flex gap-1">
+                            <select id="tx-kat" onchange="updateSubKategoriOptions()" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-bold custom-card-bg"></select>
+                            <button type="button" onclick="window.gotoTambahKategoriDariForm()" class="shrink-0 w-9 bg-slate-100 border border-slate-200 rounded-xl font-black text-slate-500 custom-card-bg" title="Tambah Kategori Baru">+</button>
+                        </div>
+                        <div class="flex gap-1">
+                            <select id="tx-sub" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-bold custom-card-bg"></select>
+                            <button type="button" onclick="window.gotoTambahKategoriDariForm()" class="shrink-0 w-9 bg-slate-100 border border-slate-200 rounded-xl font-black text-slate-500 custom-card-bg" title="Tambah Sub-Kategori Baru">+</button>
+                        </div>
                     </div>
                     <div>
                         <label class="block text-[10px] font-bold text-slate-400 mb-1">Nominal Transaksi (Rp)</label>
