@@ -924,15 +924,21 @@
             let cellsHtml = "";
             const heatmapBgVal = getComputedStyle(document.documentElement).getPropertyValue('--heatmap-bg-color').trim();
             const heatmapTextVal = getComputedStyle(document.documentElement).getPropertyValue('--heatmap-text-color').trim();
-            const heatmapGradientVal = getComputedStyle(document.documentElement).getPropertyValue('--heatmap-gradient-color').trim();
+            let heatmapGradientVal = getComputedStyle(document.documentElement).getPropertyValue('--heatmap-gradient-color').trim();
+            // Pastikan hanya format #RRGGBB murni (buang kanal alpha bawaan color picker agar tidak bentrok saat digabung)
+            if (heatmapGradientVal.length >= 7) heatmapGradientVal = heatmapGradientVal.substring(0, 7);
+
+            const maxCount = Math.max(1, ...Object.values(activityMap).map(a => a.count));
+
             for(let day = 1; day <= totalDays; day++) {
                 const act = activityMap[day];
                 let bgStyle = `background-color: ${heatmapBgVal}; color: ${heatmapTextVal};`;
                 
                 if(act.count > 0) {
-                    if(act.count <= 2) bgStyle = `background-color: ${heatmapGradientVal}33; color: var(--app-text-color); font-weight: bold;`;
-                    else if(act.count <= 4) bgStyle = `background-color: ${heatmapGradientVal}88; color: #ffffff; font-weight: bold;`;
-                    else bgStyle = `background-color: ${heatmapGradientVal}; color: #ffffff; font-weight: bold; box-shadow: 0 1px 2px rgba(0,0,0,0.05);`;
+                    const ratio = act.count / maxCount;
+                    const alphaHex = Math.round(51 + ratio * 204).toString(16).padStart(2, '0');
+                    const textColor = ratio > 0.45 ? '#ffffff' : 'var(--app-text-color)';
+                    bgStyle = `background-color: ${heatmapGradientVal}${alphaHex}; color: ${textColor}; font-weight: bold;${ratio > 0.8 ? ' box-shadow: 0 1px 2px rgba(0,0,0,0.05);' : ''}`;
                 }
                 
                 const paddedDay = String(day).padStart(2, '0');
