@@ -1411,9 +1411,57 @@
             document.getElementById("tx-time").value = String(now.getHours()).padStart(2, '0') + ":" + String(now.getMinutes()).padStart(2, '0');
 
             toggleTransferFields();
+
+            if (txDraft) {
+                restoreTxFormDraft(txDraft);
+            }
         }
 
-        window.closeTransactionModal = function() {
+        let txDraft = null;
+
+        function captureTxFormDraft() {
+            return {
+                type: document.getElementById("tx-type").value,
+                acc: document.getElementById("tx-acc").value,
+                target: document.getElementById("tx-target") ? document.getElementById("tx-target").value : '',
+                admin: document.getElementById("tx-admin") ? document.getElementById("tx-admin").value : '',
+                kat: document.getElementById("tx-kat").value,
+                sub: document.getElementById("tx-sub").value,
+                nominal: document.getElementById("tx-nominal").value,
+                notes: document.getElementById("tx-notes").value,
+                date: document.getElementById("tx-date").value,
+                time: document.getElementById("tx-time").value
+            };
+        }
+
+        function isTxDraftMeaningful(d) {
+            return !!(d && (d.nominal || d.notes));
+        }
+
+        function restoreTxFormDraft(d) {
+            document.getElementById("tx-type").value = d.type;
+            toggleTransferFields();
+            updateKategoriOptions();
+            if (d.acc) document.getElementById("tx-acc").value = d.acc;
+            if (d.target && document.getElementById("tx-target")) document.getElementById("tx-target").value = d.target;
+            if (d.admin && document.getElementById("tx-admin")) document.getElementById("tx-admin").value = d.admin;
+            if (d.kat) document.getElementById("tx-kat").value = d.kat;
+            updateSubKategoriOptions();
+            if (d.sub) document.getElementById("tx-sub").value = d.sub;
+            if (d.nominal) document.getElementById("tx-nominal").value = d.nominal;
+            if (d.notes) document.getElementById("tx-notes").value = d.notes;
+            if (d.date) document.getElementById("tx-date").value = d.date;
+            if (d.time) document.getElementById("tx-time").value = d.time;
+            showToast("Draft transaksi sebelumnya dipulihkan.");
+        }
+
+        window.closeTransactionModal = function(saveDraft = true) {
+            if (saveDraft && editingTxId === null && !pendingPartialPayment && !pendingPartialPaymentEdit) {
+                const draft = captureTxFormDraft();
+                txDraft = isTxDraftMeaningful(draft) ? draft : null;
+            }
+            pendingPartialPayment = null;
+            pendingPartialPaymentEdit = null;
             document.getElementById("tx-modal").classList.add("hidden");
             document.getElementById("tx-modal").classList.remove("flex");
             editingTxId = null;
@@ -1555,10 +1603,11 @@
                     const idx = transactions.findIndex(t => t.id === editingTxId);
                     if (idx !== -1) transactions[idx] = { id: editingTxId, ...newTx };
 
-                    if (pendingPartialPaymentEdit) {
-                        await applyEditedPartialPayment(pendingPartialPaymentEdit.reminderId, pendingPartialPaymentEdit.idx, newTx);
-                        pendingPartialPaymentEdit = null;
+                    const linkedEntry = findLinkedReminderPaymentEntry(editingTxId);
+                    if (linkedEntry) {
+                        await applyEditedPartialPayment(linkedEntry.rem.id, linkedEntry.idx, newTx);
                     }
+                    pendingPartialPaymentEdit = null;
                 } else {
                     const newDocRef = await addDoc(collection(db, `users/${currentUser.uid}/transactions`), newTx);
                     transactions.push({ id: newDocRef.id, ...newTx });
@@ -1570,7 +1619,9 @@
                 }
                 transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
 
-                closeTransactionModal();
+                txDraft = null;
+                closeTransactionModal(false);
+                document.getElementById("tx-form").reset();
                 hitungUang();
                 renderDashboard();
                 renderHistory();
@@ -1582,7 +1633,8 @@
             const rem = reminders.find(r => r.id === reminderId);
             if (!rem) return;
             const paidAmount = tx.amount;
-            const newRemAmount = Math.max(0, rem.amount - paidAmount);
+            const originalRemaining = rem.amount;
+            const newRemAmount = Math.max(0, originalRemaining - paidAmount);
             const historyEntry = { date: formatDateLocal(new Date(tx.date)), amount: paidAmount, accountId: tx.accountId, txId: txId };
             const newHistory = [...(rem.paymentHistory || []), historyEntry];
             const newStatus = newRemAmount <= 0 ? "Lunas" : rem.status;
@@ -1594,6 +1646,12 @@
             rem.paymentHistory = newHistory;
             rem.status = newStatus;
             renderReminders();
+
+            if (paidAmount > originalRemaining) {
+                showToast(`Pembayaran melebihi sisa tagihan (Rp ${originalRemaining.toLocaleString('id-ID')}) — pengingat dinyatakan Lunas.`);
+            } else if (newStatus === "Lunas") {
+                showToast("Pengingat lunas!");
+            }
         }
 
         async function applyEditedPartialPayment(reminderId, idx, tx) {
@@ -1642,6 +1700,15 @@
             document.getElementById("tx-modal").classList.add("flex");
         }
 
+        function findLinkedReminderPaymentEntry(txId) {
+            for (const rem of reminders) {
+                if (!rem.paymentHistory) continue;
+                const idx = rem.paymentHistory.findIndex(h => h.txId === txId);
+                if (idx !== -1) return { rem, idx };
+            }
+            return null;
+        }
+
         window.konfirmasiHapusTx = function(id) {
             openConfirmModal("Hapus Catatan?", "Yakin ingin menghapus transaksi ini?", async () => {
                 const tx = transactions.find(t => t.id === id);
@@ -1660,6 +1727,23 @@
                 await deleteDoc(doc(db, `users/${currentUser.uid}/transactions/${id}`));
                 const delIdx = transactions.findIndex(t => t.id === id);
                 if (delIdx !== -1) transactions.splice(delIdx, 1);
+
+                const linkedEntry = findLinkedReminderPaymentEntry(id);
+                if (linkedEntry) {
+                    const { rem, idx: hIdx } = linkedEntry;
+                    const entryAmount = rem.paymentHistory[hIdx].amount;
+                    const newRemAmount = rem.amount + entryAmount;
+                    const newHistory = rem.paymentHistory.filter((h, i) => i !== hIdx);
+                    await updateDoc(doc(db, `users/${currentUser.uid}/reminders/${rem.id}`), {
+                        amount: newRemAmount, paymentHistory: newHistory, status: "Belum Dibayar"
+                    });
+                    rem.amount = newRemAmount;
+                    rem.paymentHistory = newHistory;
+                    rem.status = "Belum Dibayar";
+                    renderReminders();
+                    showToast("Transaksi dihapus, sisa tagihan pengingat terkait ikut diperbarui.");
+                }
+
                 hitungUang();
                 renderDashboard();
                 renderHistory();
@@ -2431,37 +2515,31 @@
             const rem = reminders.find(r => r.id === id);
             if(!rem) return;
 
-            openPromptModal("Bayar Sebagian", "Jumlah yang dibayar (Rp)", "", (inputVal) => {
-                const amount = Number(String(inputVal).replace(/\D/g, ""));
-                if (!amount || amount <= 0) { showToast("Jumlah tidak valid."); return; }
-                if (amount > rem.amount) { showToast("Jumlah melebihi sisa tagihan."); return; }
+            pendingPartialPayment = { reminderId: id };
 
-                pendingPartialPayment = { reminderId: id };
+            // Buka Modal Transaksi Utama, nominal dikosongkan supaya user isi sendiri jumlah pembayaran sebagiannya
+            editingTxId = null;
+            document.getElementById("modal-tx-title").innerText = `Bayar Sebagian: ${rem.title}`;
+            document.getElementById("tx-form").reset();
 
-                // Buka Modal Transaksi Utama & Isi Otomatis Sesuai Jumlah Yang Dibayar
-                editingTxId = null;
-                document.getElementById("modal-tx-title").innerText = `Bayar Sebagian: ${rem.title}`;
-                document.getElementById("tx-form").reset();
+            document.getElementById("tx-type").value = rem.type;
+            toggleTransferFields();
 
-                document.getElementById("tx-type").value = rem.type;
-                toggleTransferFields();
+            document.getElementById("tx-kat").value = rem.category;
+            updateSubKategoriOptions();
 
-                document.getElementById("tx-kat").value = rem.category;
-                updateSubKategoriOptions();
+            document.getElementById("tx-nominal").value = "";
+            document.getElementById("tx-notes").value = `Pembayaran Sebagian: ${rem.title}`;
 
-                document.getElementById("tx-nominal").value = amount.toLocaleString('id-ID');
-                document.getElementById("tx-notes").value = `Pembayaran Sebagian: ${rem.title}`;
+            const now = new Date();
+            const localDateStrBayar = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+            document.getElementById("tx-date").value = localDateStrBayar;
+            document.getElementById("tx-time").value = String(now.getHours()).padStart(2, '0') + ":" + String(now.getMinutes()).padStart(2, '0');
 
-                const now = new Date();
-                const localDateStrBayar = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
-                document.getElementById("tx-date").value = localDateStrBayar;
-                document.getElementById("tx-time").value = String(now.getHours()).padStart(2, '0') + ":" + String(now.getMinutes()).padStart(2, '0');
+            document.getElementById("tx-modal").classList.remove("hidden");
+            document.getElementById("tx-modal").classList.add("flex");
 
-                document.getElementById("tx-modal").classList.remove("hidden");
-                document.getElementById("tx-modal").classList.add("flex");
-
-                showToast("Lengkapi & simpan transaksi untuk mencatat pembayaran ini.");
-            });
+            showToast(`Isi jumlah yang dibayar (sisa tagihan: Rp ${rem.amount.toLocaleString('id-ID')}).`);
         };
 
         window.bayarViaKas = function(id) {
@@ -3032,7 +3110,7 @@
             </form>
         </div>
 
-        <div id="tx-modal" class="fixed inset-0 bg-slate-900/60 items-end justify-center z-50 hidden">
+        <div id="tx-modal" onclick="if(event.target === this) closeTransactionModal()" class="fixed inset-0 bg-slate-900/60 items-end justify-center z-50 hidden">
             <form id="tx-form" onsubmit="simpanTransaksi(event)" class="bg-white w-full rounded-t-[2.5rem] p-6 space-y-4 max-h-[85vh] overflow-y-auto shadow-2xl custom-card-bg border-t">
                 <div class="flex justify-between items-center pb-2 border-b border-slate-100">
                     <h3 class="font-black text-base" id="modal-tx-title">Buat Catatan Transaksi</h3>
@@ -3048,9 +3126,20 @@
                         <label id="label-akun-asal" class="block text-[10px] font-bold text-slate-400 mb-1">Pilihan Akun Kas / Bank</label>
                         <select id="tx-acc" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-bold custom-card-bg"></select>
                     </div>
-                    <div class="grid grid-cols-2 gap-2 hidden" id="div-tujuan">
-                        <select id="tx-target" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-bold custom-card-bg"></select>
-                        <input type="text" id="tx-admin" onkeyup="formatNominalInput(this)" placeholder="Biaya Admin (Rp)" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-bold custom-card-bg">
+                    <div class="hidden space-y-3" id="div-tujuan">
+                        <div class="flex items-center gap-2 text-slate-300">
+                            <div class="flex-1 border-t border-dashed border-slate-200"></div>
+                            <i data-lucide="arrow-down" class="w-3.5 h-3.5"></i>
+                            <div class="flex-1 border-t border-dashed border-slate-200"></div>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 mb-1">Akun Tujuan</label>
+                            <select id="tx-target" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-bold custom-card-bg"></select>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 mb-1">Biaya Admin (Opsional)</label>
+                            <input type="text" id="tx-admin" onkeyup="formatNominalInput(this)" placeholder="Rp 0" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-bold custom-card-bg">
+                        </div>
                     </div>
                     <div class="grid grid-cols-2 gap-2" id="div-kategori">
                         <div class="flex gap-1">
